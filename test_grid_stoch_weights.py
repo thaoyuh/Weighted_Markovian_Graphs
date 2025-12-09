@@ -525,7 +525,7 @@ class EfficiencyProblemInstanceStochastic:
 # SPSA OPTIMIZATION
 # ============================================================================
 
-def solve_spsa_efficiency(problem, x_init, max_iter=5000, 
+def solve_spsa_efficiency(problem, x_init, max_iter=50000, 
                           a=0.05, a_eps=100, e=1e-3, r_nu=0.101,
                           obj_interval=100, verbose=True,
                           max_obj_value=1e10):
@@ -1064,7 +1064,7 @@ def test_deterministic_vs_stochastic():
     # Optimize
     print("\nRunning SPSA optimization (Deterministic)...")
     iter_det, eff_hist_det, kw_det, var_det, best_x_det, _ = solve_spsa_efficiency(
-        problem_det, x_init, max_iter=5000, a=0.02, a_eps=50, 
+        problem_det, x_init, max_iter=50000, a=0.02, a_eps=50, 
         obj_interval=200, verbose=True
     )
     
@@ -1114,7 +1114,7 @@ def test_deterministic_vs_stochastic():
     # Optimize
     print("\nRunning SPSA optimization (Stochastic)...")
     iter_stoch, eff_hist_stoch, kw_stoch, var_stoch, best_x_stoch, _ = solve_spsa_efficiency(
-        problem_stoch, x_init, max_iter=5000, a=0.02, a_eps=50,
+        problem_stoch, x_init, max_iter=50000, a=0.02, a_eps=50,
         obj_interval=200, verbose=True
     )
     
