@@ -29,7 +29,7 @@ from matplotlib.colors import LinearSegmentedColormap
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
-
+   
 def row_normalize(M):
     row_sums = np.sum(M, axis=1, keepdims=True)
     row_sums[row_sums == 0] = 1

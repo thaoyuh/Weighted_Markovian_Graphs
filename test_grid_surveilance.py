@@ -815,7 +815,7 @@ def test_grid_with_obstacle():
     plot_grid_network(n, mA, W, obstacle_mask, grid_positions,
                       P=None, pi=None,
                       title=f"{n}×{n} Grid Network with Obstacle (Structure)",
-                      filename='grid_structure.png')
+                      filename='Figures/grid_structure.png')
     
     # Evaluate initial metrics
     P_init = x_to_matrix(x_init, problem.N, problem.edge_matrix, problem.bUndirected)
@@ -831,7 +831,7 @@ def test_grid_with_obstacle():
     plot_grid_network(n, mA, W, obstacle_mask, grid_positions,
                       P=P_init, pi=initial_metrics['pi'],
                       title="Initial Policy (Uniform Transitions)",
-                      filename='grid_initial_policy.png')
+                      filename='Figures/grid_initial_policy.png')
     
     # Run SPSA optimization
     print("\n" + "="*80)
@@ -876,7 +876,7 @@ def test_grid_with_obstacle():
     plot_grid_network(n, mA, W, obstacle_mask, grid_positions,
                       P=P_final, pi=final_metrics['pi'],
                       title="Optimal Surveillance Policy",
-                      filename='grid_optimal_policy.png')
+                      filename='Figures/grid_optimal_policy.png')
     
     # Plot optimization convergence
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
@@ -935,7 +935,7 @@ def test_grid_with_obstacle():
     plt.suptitle(f'{n}×{n} Grid Network with Obstacle - Optimization Results', 
                  fontsize=14, fontweight='bold')
     plt.tight_layout()
-    plt.savefig('grid_optimization_results.png', dpi=150)
+    plt.savefig('Figures/grid_optimization_results.png', dpi=150)
     print("\n✓ Optimization plot saved to 'grid_optimization_results.png'")
     plt.show()
     
