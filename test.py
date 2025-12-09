@@ -795,19 +795,19 @@ def test_5node_network():
     print("Plotting network structure...")
     plot_network(mA, W, P=None, pi=None,
                  title="Network Structure (Edge Labels = Travel Times)", 
-                 filename='network_structure.png')
+                 filename='Figures/network_structure.png')
     
     # Plot the initial (uniform) policy
     print("\nPlotting initial (uniform) policy...")
     plot_network(mA, W, P=P_init, pi=initial_metrics['pi'],
                  title="Initial Policy (Uniform Transitions)", 
-                 filename='network_initial_policy.png')
+                 filename='Figures/network_initial_policy.png')
     
     # Plot the network with optimal transition probabilities and resulting pi
     print("\nPlotting optimal policy on network...")
     plot_network(mA, W, P=P_final, pi=final_metrics['pi'],
                  title="Optimal Surveillance Policy", 
-                 filename='network_optimal_policy.png')
+                 filename='Figures/network_optimal_policy.png')
     
     # Plot results - include all iterations from 0
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
@@ -870,7 +870,7 @@ def test_5node_network():
     cbar.set_label('Iteration')
     
     plt.tight_layout()
-    plt.savefig('efficiency_5node_results.png', dpi=150)
+    plt.savefig('Figures/efficiency_5node_results.png', dpi=150)
     print("\n✓ Plot saved to 'efficiency_5node_results.png'")
     plt.show()
     

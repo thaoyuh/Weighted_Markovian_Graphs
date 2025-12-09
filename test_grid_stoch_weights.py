@@ -836,7 +836,7 @@ def plot_grid_network_stochastic(n, mA, W, CV_matrix, obstacle_mask, grid_positi
 
 def plot_optimal_policy_comparison(n, mA, CV_matrix, obstacle_mask, grid_positions,
                                     P_det, P_stoch, pi_det, pi_stoch,
-                                    filename='optimal_policy_comparison.png'):
+                                    filename='Figures/optimal_policy_comparison.png'):
     """
     Plot side-by-side comparison of optimal policies for deterministic vs stochastic weights.
     - Deterministic: all edges gray (no CV variation)
@@ -1203,7 +1203,7 @@ The Efficiency Index (Var/Mean) also increases because:
     
     plt.suptitle('Does Optimal Policy Favor High-CV Edges?', fontsize=14, fontweight='bold')
     plt.tight_layout()
-    plt.savefig('policy_vs_cv_analysis.png', dpi=150)
+    plt.savefig('Figures/policy_vs_cv_analysis.png', dpi=150)
     print("\n✓ Policy vs CV analysis saved to 'policy_vs_cv_analysis.png'")
     plt.show()
     
@@ -1249,7 +1249,7 @@ The Efficiency Index (Var/Mean) also increases because:
         
         plt.suptitle('Deterministic vs Stochastic Weights Comparison', fontsize=14, fontweight='bold')
         plt.tight_layout()
-        plt.savefig('deterministic_vs_stochastic_comparison.png', dpi=150)
+        plt.savefig('Figures/deterministic_vs_stochastic_comparison.png', dpi=150)
         print("\n✓ Comparison plot saved to 'deterministic_vs_stochastic_comparison.png'")
         plt.show()
         
@@ -1259,7 +1259,7 @@ The Efficiency Index (Var/Mean) also increases because:
             iter_det, eff_hist_det, kw_det, var_det,
             metrics_det_init, metrics_det_final,
             n=n, case_name='Deterministic Weights',
-            filename='grid_optimization_results_deterministic.png'
+            filename='Figures/grid_optimization_results_deterministic.png'
         )
         
         # One for stochastic
@@ -1267,20 +1267,20 @@ The Efficiency Index (Var/Mean) also increases because:
             iter_stoch, eff_hist_stoch, kw_stoch, var_stoch,
             metrics_stoch_init, metrics_stoch_final,
             n=n, case_name='Stochastic Weights',
-            filename='grid_optimization_results_stochastic.png'
+            filename='Figures/grid_optimization_results_stochastic.png'
         )
     
     # Plot grid with CV coloring
     plot_grid_network_stochastic(n, mA, W_mean, CV_matrix, obstacle_mask, grid_positions,
                                   P=P_stoch, pi=metrics_stoch_final['pi_W'],
                                   title="Optimal Policy (Stochastic Weights)\nThick=High P, Green=Reliable, Red=Unreliable",
-                                  filename='grid_stochastic_policy.png')
+                                  filename='Figures/grid_stochastic_policy.png')
     
     # Plot side-by-side comparison of optimal policies
     plot_optimal_policy_comparison(n, mA, CV_matrix, obstacle_mask, grid_positions,
                                     P_det, P_stoch,
                                     metrics_det_final['pi_W'], metrics_stoch_final['pi_W'],
-                                    filename='optimal_policy_comparison.png')
+                                    filename='Figures/optimal_policy_comparison.png')
     
     return {
         'deterministic_init': metrics_det_init,
@@ -1410,7 +1410,7 @@ def test_varying_cv_levels():
     fig.legend([bars1, bars2], ['Efficiency', 'Variance'], loc='upper right')
     
     plt.tight_layout()
-    plt.savefig('cv_level_comparison.png', dpi=150)
+    plt.savefig('Figures/cv_level_comparison.png', dpi=150)
     print("\n✓ CV level comparison saved to 'cv_level_comparison.png'")
     plt.show()
     
