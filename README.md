@@ -18,7 +18,6 @@ The paper introduces a framework for weighted random walks on graphs that explic
 ---
 
 ## Repository Structure
-
 ```
 ├── README.md
 ├── Surveillance_Network/           # Section 6.1: Surprise index optimization
@@ -49,12 +48,30 @@ Optimizes a *surprise index* $\mathcal{S}(\mathbf{P}) = \sqrt{V_{\mathcal{W}}} /
 
 **Features:** deterministic and stochastic edge weights, uniform and non-uniform target distributions, obstacle configurations with LP-based feasibility verification.
 
+**Configuration** (set in `Main_new.py`):
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `ETA_SMALL` / `ETA_BIG` | `1e-4` / `1e-8` | Minimum transition probability (4×4 / 8×8) |
+| `max_iter` | 8000–25000 | SPSA iterations |
+| `a` | 0.0005–0.001 | SPSA step size |
+| `obs8` | `[(2,2),(2,3),(5,4),(5,5)]` | Obstacle positions (8×8 grid) |
+| `priority8` | `2.0` on adjacent nodes | Coverage weight multiplier |
 ```bash
 cd Surveillance_Network
 python Main_new.py
 ```
 
-Outputs are saved to `Surveillance_Network/Results/`.
+**Outputs** (saved to `Results/`):
+
+| File | Description |
+|------|-------------|
+| `optimization_report.txt` | Summary table: $K_{\mathcal{W}}$, $\sqrt{V_{\mathcal{W}}}$, $\mathcal{S}$, $\|\pi - \hat{\mu}\|$ |
+| `fig1a_uniform.png` | Uniform baseline policy (4×4) |
+| `fig1b_min_variance.png` | Min-variance / Hamiltonian cycle (4×4) |
+| `fig2_max_surprise_det.png` | Max-surprise policy (4×4) |
+| `fig5_8x8_stoch.png` | Max-surprise policy (8×8, stochastic) |
+| `supp_*.png` | Convergence plots (supplementary) |
 
 ---
 
@@ -68,10 +85,21 @@ Performs a sequential $N{-}k$ failure analysis to quantify network resilience. W
 
 The weight optimization (`minimal_optimization.py`) solves a constrained minimal-intervention program: find the smallest change in weights such that $K_{\mathcal{W}}$ and $V_{\mathcal{W}}$ do not deteriorate.
 
+**Configuration** (set in `main.ipynb`):
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `num_nodes` | 10 | Number of nodes in the network |
+| `connection_prob` | 0.5 | Edge density (geometric graph radius) |
+| `dest_set` | `[1, 4, 8]` | Destination nodes (locked in hybrid projection) |
+| `W_min` / `W_max` | 5 / 50 | Speed limit bounds (weight range) |
+| `k` | 1–10 | Number of sequential edge failures |
 ```bash
 cd Traffic_Network
 jupyter notebook main.ipynb
 ```
+
+**Outputs** (saved to `Figures/`): network visualizations at each failure step, evolution of $K_{\mathcal{W}}$ and $V_{\mathcal{W}}$ across the $N{-}k$ sequence, and comparison of projection strategies.
 
 ---
 
@@ -79,7 +107,6 @@ jupyter notebook main.ipynb
 
 - **Python** 3.10+ (tested on 3.12)
 - Required packages:
-
 ```
 numpy
 scipy
@@ -90,7 +117,6 @@ jupyter
 ```
 
 Install with pip:
-
 ```bash
 pip install numpy scipy matplotlib networkx sympy jupyter
 ```
