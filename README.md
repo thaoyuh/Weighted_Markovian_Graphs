@@ -99,7 +99,13 @@ cd Traffic_Network
 jupyter notebook main.ipynb
 ```
 
-**Outputs** (saved to `Figures/`): network visualizations at each failure step, evolution of $K_{\mathcal{W}}$ and $V_{\mathcal{W}}$ across the $N{-}k$ sequence, and comparison of projection strategies.
+**Outputs** (saved to `Figures/`):
+
+| File | Description |
+|------|-------------|
+| `boxplot_colorpat_n10_deg5_geom_150reps_k6.png` | Improvement in $K_{\mathcal{W}}$ and $V_{\mathcal{W}}$ after minimal intervention (boxplots) |
+| `statdist_boxplot_colorpat_n10_deg5_geom_150reps_k6.png` | Stationary distribution preservation across projection strategies |
+| `res_boxplot_colorpat_n10_deg5_geom_150reps_k6.rtf` | Numerical summary: mean improvements and $\Delta\pi$ statistics |
 
 ---
 
