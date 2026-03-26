@@ -1,4 +1,4 @@
-# Random Walks with Traversal Costs
+# Weighted_Markovian_Graphs
 
 Companion code for:
 
@@ -27,7 +27,6 @@ The framework supports:
 ---
 
 ## Repository Structure
-
 ```
 ├── Main_new.py                 # Main experiment script (publication results)
 ├── problem_instance.py         # Problem formulation: constraints, projections, objective
@@ -38,7 +37,13 @@ The framework supports:
 ├── feasibility.py              # LP-based feasibility checking
 ├── network.py                  # Markov chain class (deterministic weights)
 ├── Optimize_K_W.py             # Kemeny constant optimization (baseline comparison)
-└── Figures/                    # Output directory for policy visualizations
+└── Results/                    # Output directory
+    ├── optimization_report.txt # Summary table of all experiments
+    ├── fig1a_uniform.png       # Uniform baseline policy (4×4)
+    ├── fig1b_min_variance.png  # Min-variance policy / Hamiltonian cycle (4×4)
+    ├── fig2_max_surprise_det.png # Max-surprise policy, deterministic (4×4)
+    ├── fig5_8x8_stoch.png      # Max-surprise policy, stochastic (8×8)
+    └── supp_*.png              # Convergence plots (supplementary)
 ```
 
 ### Key modules
@@ -57,7 +62,6 @@ The framework supports:
 
 - **Python** 3.10+ (tested on 3.12)
 - Required packages:
-
 ```
 numpy
 scipy
@@ -66,13 +70,11 @@ sympy
 ```
 
 Install with pip:
-
 ```bash
 pip install numpy scipy matplotlib sympy
 ```
 
 Or with conda:
-
 ```bash
 conda install numpy scipy matplotlib sympy
 ```
@@ -84,7 +86,6 @@ No GPU or special hardware is required. All experiments run on standard hardware
 ## Running the Experiments
 
 Run the surveillance network experiments (Section 6.1 of the paper):
-
 ```bash
 python Main_new.py
 ```
@@ -101,7 +102,7 @@ This will:
    - Feasibility check via LP
    - Maximize surprise index ($\mathcal{S}^* \approx 1.26$)
 
-3. **Generate outputs:**
+3. **Generate outputs in `Results/`:**
    - Policy visualization figures (`fig*.png`)
    - Convergence plots (`supp_*.png`)
    - Numerical report (`optimization_report.txt`)
@@ -111,7 +112,6 @@ This will:
 ## Configuration
 
 Key parameters are set in `Main_new.py`:
-
 ```python
 SEED = 42                # Random seed for reproducibility
 ETA_SMALL = 1e-4         # Minimum transition probability (4×4 grid)
@@ -127,7 +127,6 @@ ETA_BIG   = 1e-8         # Minimum transition probability (8×8 grid)
 | `eta` | 1e-4 or 1e-8 | Lower bound on transition probabilities |
 
 ### Obstacle and priority configuration (8×8 grid):
-
 ```python
 obs8 = [(2, 2), (2, 3), (5, 4), (5, 5)]   # Horizontal obstacle pairs
 priority8 = {(r,c): 2.0 for ...}            # 2× weight on obstacle-adjacent nodes
@@ -137,6 +136,8 @@ priority8 = {(r,c): 2.0 for ...}            # 2× weight on obstacle-adjacent no
 
 ## Output
 
+All outputs are saved to the `Results/` directory.
+
 ### Figures
 
 | File | Description |
@@ -145,6 +146,7 @@ priority8 = {(r,c): 2.0 for ...}            # 2× weight on obstacle-adjacent no
 | `fig1b_min_variance.png` | Min-variance policy / Hamiltonian cycle (4×4) |
 | `fig2_max_surprise_det.png` | Max-surprise policy, deterministic weights (4×4) |
 | `fig5_8x8_stoch.png` | Max-surprise policy, stochastic weights (8×8) |
+| `supp_*.png` | Convergence plots for each experiment (supplementary) |
 
 ### Report
 
