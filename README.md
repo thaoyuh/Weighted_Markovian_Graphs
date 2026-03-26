@@ -2,7 +2,7 @@
 
 Companion code for:
 
-> **Le, T.P., van der Burg, R., Heidergott, B.F., Lindner, I.D., & Zocca, A.** (2025). *Random Walks with Traversal Costs: Variance-Aware Performance Analysis and Network Optimization.* Working paper.
+> **Le, T.P., van der Burg, R., Heidergott, B.F., Lindner, I.D., & Zocca, A.** (2026). *Random Walks with Traversal Costs: Variance-Aware Performance Analysis and Network Optimization.* Working paper.
 
 This repository contains the numerical experiments for the paper. Currently, the **surveillance network application** (Section 6.1) is implemented. The traffic network application (Section 6.2) ...
 
@@ -132,6 +132,7 @@ All outputs are saved to the `Results/` directory.
 ## References
 
 - **Le, T.P., van der Burg, R., Heidergott, B.F., Lindner, I.D, & Zocca, A.** (2025). Random Walks with Traversal Costs: Variance-Aware Performance Analysis and Network Optimization. Working paper.
+- **Franssen, C. P., Zocca, A., & Heidergott, B. F. (2025)**. A First-Order Gradient Approach for the Connectivity Optimization of Markov Chains. IEEE Transactions on Automatic Control.
 
 ---
 
