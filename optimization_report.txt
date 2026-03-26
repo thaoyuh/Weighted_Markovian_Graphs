@@ -11,18 +11,7 @@ Policy                      K_W        sqrtV_W         S(P)     pi_err
 -----------------------------------------------------------------
 Uniform                   28.69        29.9777       1.0449    2.6e-11
 Min-Variance               9.57         2.0462       0.2138    6.8e-06
-Max-Surprise           10970.21     15505.3471       1.4134    3.3e-11
+Max-Surprise            2622.18      3691.4834       1.4078    5.2e-09
 
 Min-Var: sqrtV_W reduced by 93.2% (Hamiltonian cycle, 16 dominant edges)
-Max-Surprise: S increased 1.4x over uniform
-
------------------------------------------------------------------
-8x8 GRID — NON-UNIFORM pi, STOCHASTIC WEIGHTS
-  CV: min=0.30, max=1.70, mean=0.85
------------------------------------------------------------------
-Policy                      K_W        sqrtV_W         S(P)     pi_err
------------------------------------------------------------------
-Uniform                  262.87       283.9503       1.0802    5.6e-09
-Max-Surprise             202.58       254.1568       1.2546    4.9e-09
-
-Max-Surprise: S increased 1.2x, Corr(P,CV)=-0.0546
+Max-Surprise: S increased 1.3x over uniform
