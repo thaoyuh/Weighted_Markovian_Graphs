@@ -1,4 +1,4 @@
-# Weighted_Markovian_Graphs
+# Weighted Markovian Graphs
 
 Companion code for:
 
