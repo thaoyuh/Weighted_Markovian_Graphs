@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2026 Le, T.P., van der Burg, R., Heidergott, B.F., Lindner, I.D., & Zocca, A.
+Copyright (c) 2026 T.P. Le, R. van der Burg
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
