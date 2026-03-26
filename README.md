@@ -10,7 +10,7 @@ This repository contains the numerical experiments for the paper. Currently, the
 
 ## Overview
 
-The paper introduces a framework for weighted random walks on graphs that explicitly incorporates the moments of edge weights into the performance analysis. The code implements the surveillance application, which optimizes a *surprise index* — a scale-invariant measure of patrol unpredictability:
+The paper introduces a framework for weighted random walks on graphs that explicitly incorporates the moments of edge weights into the performance analysis. The code implements the surveillance application, which optimizes a *surprise index*, a scale-invariant measure of patrol unpredictability:
 
 $$
 \mathcal{S}(\mathbf{P}, \mathcal{W}) = \frac{\sqrt{V_{\mathcal{W}}(\mathbf{P})}}{K_{\mathcal{W}}(\mathbf{P})}
