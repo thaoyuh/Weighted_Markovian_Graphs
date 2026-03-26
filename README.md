@@ -1,4 +1,4 @@
-# Random Walks with Traversal Costs
+# Weighted Markovian Graphs
 
 Companion code for:
 
