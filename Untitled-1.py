@@ -1,820 +1,540 @@
 """
-Grid Network Surveillance Optimization
+Main script for Grid Network Surveillance Optimization.
 
-Creates an n×n grid network with obstacles and optimizes surveillance policy.
-Following the paper's approach for handling fixed vs. optimizable edges.
+Organized into experiments for the paper:
+
+  CASE 1: Deterministic weights (CV = 0)
+    - 1A: Minimize variance   (motivating negative example — "cost of predictability")
+    - 1B: Maximize surprise index lambda  (THE main result)
+
+  CASE 2: Stochastic weights (mixed high-CV & low-CV edges)
+    - Maximize surprise index lambda  (disentangles routing vs weight-induced variance)
+
+Publication figures (all individual):
+  - Fig 1a: Initial uniform policy
+  - Fig 1b: Minimum-variance policy (near-Hamiltonian cycle)
+  - Fig 2:  Max-Surprise policy (deterministic)
+  - Fig 3:  Max-Surprise policy (stochastic, CV-colored edges)
+  - Table:  Summary of all policies
+
+Convergence plots are saved separately (e-companion / supplementary).
 """
 
 import numpy as np
-from numpy.linalg import eig, inv
-from scipy.linalg import null_space
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-import matplotlib.patches as patches
-from itertools import product
+from matplotlib.patches import FancyArrowPatch
 
-# ============================================================================
-# GRID NETWORK GENERATION
-# ============================================================================
-
-def generate_grid_network(n, obstacles=None):
-    """
-    Generate an n×n grid network with optional obstacles.
-    
-    Parameters:
-        n: Grid size (n×n nodes)
-        obstacles: List of node indices that are obstacles (removed from network)
-                   Node indices are 0 to n²-1, row-major order
-                   e.g., for 5×5 grid, center node is index 12
-    
-    Returns:
-        mA: Adjacency matrix (N×N where N = n² - len(obstacles))
-        node_positions: Dict mapping node index to (row, col) position
-        original_to_new: Dict mapping original node index to new index
-        new_to_original: Dict mapping new node index to original index
-    """
-    if obstacles is None:
-        obstacles = []
-    
-    total_nodes = n * n
-    
-    # Create full grid adjacency (4-connectivity: up, down, left, right)
-    mA_full = np.zeros((total_nodes, total_nodes))
-    
-    for i in range(total_nodes):
-        row, col = i // n, i % n
-        
-        # Up neighbor
-        if row > 0:
-            mA_full[i, i - n] = 1
-        # Down neighbor
-        if row < n - 1:
-            mA_full[i, i + n] = 1
-        # Left neighbor
-        if col > 0:
-            mA_full[i, i - 1] = 1
-        # Right neighbor
-        if col < n - 1:
-            mA_full[i, i + 1] = 1
-    
-    # Remove obstacle nodes
-    keep_nodes = [i for i in range(total_nodes) if i not in obstacles]
-    N = len(keep_nodes)
-    
-    # Create mapping
-    original_to_new = {orig: new for new, orig in enumerate(keep_nodes)}
-    new_to_original = {new: orig for new, orig in enumerate(keep_nodes)}
-    
-    # Extract submatrix
-    mA = np.zeros((N, N))
-    for i_new, i_orig in enumerate(keep_nodes):
-        for j_new, j_orig in enumerate(keep_nodes):
-            mA[i_new, j_new] = mA_full[i_orig, j_orig]
-    
-    # Node positions (row, col) in grid coordinates
-    node_positions = {}
-    for new_idx, orig_idx in new_to_original.items():
-        row, col = orig_idx // n, orig_idx % n
-        node_positions[new_idx] = (row, col)
-    
-    return mA, node_positions, original_to_new, new_to_original, n, obstacles
-
-
-def generate_travel_times(mA, node_positions, seed=42):
-    """
-    Generate travel time matrix W based on grid distances.
-    Adds some randomness to make it asymmetric.
-    
-    Parameters:
-        mA: Adjacency matrix
-        node_positions: Dict mapping node index to (row, col)
-        seed: Random seed
-    
-    Returns:
-        W: Travel time matrix (same shape as mA)
-    """
-    np.random.seed(seed)
-    N = mA.shape[0]
-    W = np.zeros((N, N))
-    
-    for i in range(N):
-        for j in range(N):
-            if mA[i, j] > 0:
-                # Base travel time = 1, with random variation
-                W[i, j] = 1.0 + np.random.uniform(0, 1)
-    
-    return W
+# Import from project modules
+from utils import x_to_matrix, build_neighborhoods
+from network_stochastic import MarkovChainStochastic
+from problem_instance import EfficiencyProblemInstanceStochastic
+from grid_generation import generate_grid_network_stochastic, create_grid_target_distribution
+from optimization import solve_spsa_efficiency
 
 
 # ============================================================================
-# MARKOV CHAIN CLASS (same as before)
+# PUBLICATION-QUALITY POLICY PLOT
 # ============================================================================
 
-class MarkovChain:
-    def __init__(self, mA, x=None, W=None, bUndirected=False):
-        self.n = mA.shape[0]
-        self.bUndirected = bUndirected
-        self.mA = mA
-        
-        if W is not None:
-            self.W = W
-            self.W2 = W ** 2
+def plot_policy_publication(n, mA, obstacle_mask, grid_positions, P, pi,
+                            title, filename, cv_matrix=None,
+                            figsize=(6, 6), show_node_labels=True):
+    """
+    Publication-quality single policy network plot.
+    """
+    NODE_RADIUS = 0.22
+    SHRINK = 0.22
+
+    fig, ax = plt.subplots(figsize=figsize)
+
+    edge_list = np.argwhere(mA > 0)
+    P_vals = P[mA > 0]
+    max_P = np.max(P_vals) if len(P_vals) > 0 else 1.0
+    min_P = np.min(P_vals) if len(P_vals) > 0 else 0.0
+    range_P = max_P - min_P if max_P > min_P else 1.0
+
+    for i, j in edge_list:
+        ri, ci = grid_positions[i]
+        rj, cj = grid_positions[j]
+
+        if cv_matrix is not None and cv_matrix[i, j] >= 1.0:
+            color = '#d62728'
+            alpha = min(0.55 + 0.3 * (cv_matrix[i, j] - 1), 0.9)
+        elif cv_matrix is not None:
+            color = '#2ca02c'
+            alpha = 0.5 + 0.4 * (1 - cv_matrix[i, j])
         else:
-            self.W = np.ones((self.n, self.n))
-            self.W2 = np.ones((self.n, self.n))
-        
-        self.pi = None
-        self.Pi = None
-        self.pi_W = None
-        self.Z = None
-        self.M = None
-        self.V = None
-        self.K_W = None
-        self.Net_Var = None
-        self.Eff_Idx = None
-        
-        self.edge_matrix = self._create_edge_matrix(mA)
-        
-        if x is not None:
-            self.x = x
-    
-    @staticmethod
-    def _create_edge_matrix(mA):
-        indices = np.nonzero(mA)
-        num_edges = indices[0].shape[0]
-        E = np.zeros((num_edges, 2), dtype=int)
-        E[:, 0] = indices[0]
-        E[:, 1] = indices[1]
-        return E
-    
-    @property
-    def P(self):
-        P_matrix = np.zeros((self.n, self.n))
-        P_matrix[self.edge_matrix[:, 0], self.edge_matrix[:, 1]] = self.x
-        return P_matrix
-    
-    @staticmethod
-    def P_to_x(P, mA, bUndirected=False):
-        N, _ = mA.shape
-        return np.array([P[i, j] for i, j in product(range(N), range(N)) if mA[i, j] == 1])
-    
-    def compute_pi(self):
-        eigenvalues, eigenvectors = eig(self.P.T)
-        idx = np.argmin(np.abs(eigenvalues - 1))
-        pi = np.real(eigenvectors[:, idx])
-        self.pi = pi / np.sum(pi)
-        return self.pi
-    
-    def compute_Pi(self):
-        if self.pi is None:
-            self.compute_pi()
-        self.Pi = np.outer(np.ones(self.n), self.pi)
-        return self.Pi
-    
-    def compute_pi_W(self):
-        if self.pi is None:
-            self.compute_pi()
-        P_hadamard_W = np.multiply(self.P, self.W)
-        U_bar = np.sum(P_hadamard_W, axis=1)
-        numerator = self.pi * U_bar
-        denominator = np.sum(numerator)
-        self.pi_W = numerator / denominator
-        return self.pi_W
-    
-    def compute_Z(self):
-        if self.Pi is None:
-            self.compute_Pi()
-        I = np.eye(self.n)
-        self.Z = inv(I - self.P + self.Pi)
-        return self.Z
-    
-    def compute_M(self):
-        if self.Z is None:
-            self.compute_Z()
-        I = np.eye(self.n)
-        Ones = np.ones((self.n, self.n))
-        P_dot_W = np.multiply(self.P, self.W)
-        Xi_inv = np.diag(1.0 / self.pi)
-        scalar_term = np.dot(self.pi, np.sum(P_dot_W, axis=1))
-        Term1 = self.Z @ P_dot_W @ self.Pi
-        Term2 = Ones @ np.diag(np.diag(Term1))
-        Z_dg_matrix = np.diag(np.diag(self.Z))
-        Term3_inner = I - self.Z + (Ones @ Z_dg_matrix)
-        Bracket = Term1 - Term2 + (scalar_term * Term3_inner)
-        self.M = Bracket @ Xi_inv
-        return self.M
-    
-    def compute_V(self):
-        if self.M is None:
-            self.compute_M()
-        I = np.eye(self.n)
-        Ones = np.ones((self.n, self.n))
-        P_dot_W = np.multiply(self.P, self.W)
-        P_dot_W2 = np.multiply(self.P, self.W2)
-        val_A = np.dot(self.pi, np.sum(P_dot_W2, axis=1))
-        M_off_diag = self.M - np.diag(np.diag(self.M))
-        vec_B = 2 * self.pi @ (P_dot_W @ M_off_diag)
-        M2_diag_vals = (val_A + vec_B) / self.pi
-        M2_dg = np.diag(M2_diag_vals)
-        Sum_PW2 = np.sum(P_dot_W2, axis=1, keepdims=True)
-        Term1 = self.Z @ Sum_PW2 @ np.ones((1, self.n))
-        Term2 = Ones @ np.diag(np.diag(Term1))
-        Matrix_A = self.Z @ P_dot_W @ M_off_diag
-        Term3 = 2 * (Matrix_A - (Ones @ np.diag(np.diag(Matrix_A))))
-        Z_dg = np.diag(np.diag(self.Z))
-        Prefactor = I - self.Z + (Ones @ Z_dg)
-        Term4 = Prefactor @ M2_dg
-        M2 = Term1 - Term2 + Term3 + Term4
-        self.V = M2 - (self.M ** 2)
-        return self.V
-    
-    def compute_kemeny_W(self):
-        if self.pi_W is None:
-            self.compute_pi_W()
-        if self.M is None:
-            self.compute_M()
-        self.K_W = self.pi_W @ self.M @ self.pi_W.T
-        return self.K_W
-    
-    def compute_network_variance(self):
-        if self.pi_W is None:
-            self.compute_pi_W()
-        if self.V is None:
-            self.compute_V()
-        self.Net_Var = self.pi_W @ self.V @ self.pi_W.T
-        return self.Net_Var
-    
-    def compute_efficiency_index(self):
-        if self.K_W is None:
-            self.compute_kemeny_W()
-        if self.Net_Var is None:
-            self.compute_network_variance()
-        if self.K_W == 0:
-            return np.inf
-        self.Eff_Idx = self.Net_Var / self.K_W
-        return self.Eff_Idx
-    
-    def clear_cache(self):
-        self.pi = None
-        self.Pi = None
-        self.pi_W = None
-        self.Z = None
-        self.M = None
-        self.V = None
-        self.K_W = None
-        self.Net_Var = None
-        self.Eff_Idx = None
+            color = '#555555'
+            alpha = 0.65
 
+        p_ij = P[i, j]
+        norm_P = (p_ij - min_P) / range_P if p_ij > 0.001 else 0.0
+        lw = 0.3 + 4.5 * norm_P if p_ij > 0.001 else 0.15
 
-# ============================================================================
-# HELPER FUNCTIONS
-# ============================================================================
+        dx, dy = cj - ci, rj - ri
+        start = (ci + SHRINK * dx, ri + SHRINK * dy)
+        end = (cj - SHRINK * dx, rj - SHRINK * dy)
 
-def create_edge_matrix(mA):
-    indices = np.nonzero(mA)
-    num_edges = indices[0].shape[0]
-    E = np.zeros((num_edges, 2), dtype=int)
-    E[:, 0] = indices[0]
-    E[:, 1] = indices[1]
-    return E
+        arrow = FancyArrowPatch(
+            start, end,
+            connectionstyle='arc3,rad=0.18',
+            arrowstyle='-|>',
+            mutation_scale=8 + 5 * norm_P if p_ij > 0.001 else 7,
+            color=color, lw=lw, alpha=alpha, zorder=1
+        )
+        ax.add_patch(arrow)
 
-
-def build_neighborhoods(edge_matrix, N):
-    neighborhoods = [[] for _ in range(N)]
-    for idx, (i, j) in enumerate(edge_matrix):
-        neighborhoods[i].append(idx)
-    return neighborhoods
-
-
-def x_to_matrix(x, N, edge_matrix, bUndirected=False):
-    P = np.zeros((N, N))
-    P[edge_matrix[:, 0], edge_matrix[:, 1]] = x
-    return P
-
-
-# ============================================================================
-# PROBLEM INSTANCE FOR GRID SURVEILLANCE
-# ============================================================================
-
-class GridSurveillanceProblem:
-    def __init__(self, mA, W, eta=1e-4, pi_hat=None, pi_penalty_weight=1e3):
-        """
-        Problem instance for grid surveillance optimization.
-        
-        Parameters:
-            mA: Adjacency matrix
-            W: Travel time matrix
-            eta: Lower bound for probabilities
-            pi_hat: Target stationary distribution
-            pi_penalty_weight: Penalty weight for π deviation
-        """
-        self.mA = mA
-        self.W = W
-        self.eta = eta
-        self.N = mA.shape[0]
-        self.bUndirected = False
-        self.pi_penalty_weight = pi_penalty_weight
-        
-        if pi_hat is None:
-            self.pi_hat = np.ones(self.N) / self.N
+    pi_max = np.max(pi[~obstacle_mask]) if pi is not None else 1.0
+    for i in range(n * n):
+        r, c = grid_positions[i]
+        if obstacle_mask[i]:
+            sz = 2 * (NODE_RADIUS + 0.08)
+            ax.add_patch(plt.Rectangle((c - sz/2, r - sz/2), sz, sz,
+                                        color='black', zorder=3))
+            ax.text(c, r, u'\u00d7', ha='center', va='center', fontsize=11,
+                    color='white', fontweight='bold', zorder=4)
         else:
-            self.pi_hat = np.array(pi_hat)
-        
-        self.edge_matrix = create_edge_matrix(mA)
-        self.d = len(self.edge_matrix)
-        self.neighborhoods = build_neighborhoods(self.edge_matrix, self.N)
-        
-        self._build_constraint_matrices()
-        self.proj_type = 'Markov'
-    
-    def _build_constraint_matrices(self):
-        N = self.N
-        d = self.d
-        
-        A_row = np.zeros((N, d))
-        for idx, (i, j) in enumerate(self.edge_matrix):
-            A_row[i, idx] = 1
-        b_row = np.ones(N)
-        
-        self.A = A_row
-        self.b = b_row
-        self.m2 = A_row.shape[0]
-        
-        self.C = null_space(self.A).T
-        if self.C.size == 0:
-            self.C = np.eye(d) * 1e-10
-        
-        print(f"Grid network: {N} nodes, {d} edges")
-        print(f"Variables: {d}, Hard constraints: {self.m2}, Free dimensions: {self.C.shape[0]}")
-        
-        try:
-            A_pinv = self.A.T @ np.linalg.inv(self.A @ self.A.T + 1e-10 * np.eye(len(self.A)))
-            self.A_pinv_b = A_pinv @ self.b
-            self.C__C_T_C_inv__C_T = self.C.T @ self.C
-        except np.linalg.LinAlgError:
-            self.A_pinv_b = np.zeros(d)
-            self.C__C_T_C_inv__C_T = np.eye(d)
-    
-    def objective(self, P, mA_sample=None):
-        mc = MarkovChain(mA=self.mA, W=self.W, bUndirected=False)
-        mc.x = MarkovChain.P_to_x(P, self.mA, self.bUndirected)
-        
-        try:
-            Eff = mc.compute_efficiency_index()
-            pi = mc.pi
-            pi_error = np.sum((pi - self.pi_hat) ** 2)
-            penalty = self.pi_penalty_weight * pi_error
-            return -Eff + penalty
-        except (np.linalg.LinAlgError, RuntimeWarning, ValueError):
-            return 1e10
-    
-    def evaluate_metrics(self, P):
-        mc = MarkovChain(mA=self.mA, W=self.W, bUndirected=False)
-        mc.x = MarkovChain.P_to_x(P, self.mA, self.bUndirected)
-        mc.compute_efficiency_index()
-        pi_error = np.sqrt(np.sum((mc.pi - self.pi_hat) ** 2))
-        
-        return {
-            'pi': mc.pi,
-            'pi_W': mc.pi_W,
-            'K_W': mc.K_W,
-            'Net_Var': mc.Net_Var,
-            'Eff_Idx': mc.Eff_Idx,
-            'M_diag': np.diag(mc.M),
-            'pi_error': pi_error,
-            'pi_max_error': np.max(np.abs(mc.pi - self.pi_hat)),
-        }
-
-
-# ============================================================================
-# SPSA OPTIMIZATION
-# ============================================================================
-
-def proj_simplex(v, c=1, tol=1e-8):
-    N = len(v)
-    vU = np.sort(v)[::-1]
-    cssv = np.cumsum(vU)
-    l = [k+1 for k in range(N) if (cssv[k] - c) / (k + 1) < vU[k]]
-    if not l:
-        return np.ones(N) * c / N
-    K = max(l)
-    tau = (cssv[K - 1] - c) / K
-    return np.maximum(v - tau, 0)
-
-
-def projection_markov(x_to_proj, eta, neighborhoods, mA):
-    x = x_to_proj - eta
-    x_proj = []
-    for i, subset in enumerate(neighborhoods):
-        if subset:
-            n_edges = len(subset)
-            c = 1 - n_edges * eta
-            x_proj.extend(proj_simplex(x[subset], c=c).tolist())
-    return np.array(x_proj) + eta
-
-
-def g_spsa(problem, x, eta_perturb):
-    d_free = problem.C.shape[0]
-    if d_free == 0:
-        return np.zeros(problem.d)
-    
-    Delta = np.random.choice([-1, 1], size=d_free)
-    direction = problem.C.T @ Delta
-    
-    x_plus = np.clip(x + eta_perturb * direction, problem.eta, 1 - problem.eta)
-    x_min = np.clip(x - eta_perturb * direction, problem.eta, 1 - problem.eta)
-    
-    P_plus = x_to_matrix(x_plus, problem.N, problem.edge_matrix, problem.bUndirected)
-    P_min = x_to_matrix(x_min, problem.N, problem.edge_matrix, problem.bUndirected)
-    
-    J_plus = problem.objective(P_plus)
-    J_min = problem.objective(P_min)
-    
-    gradient_est = (J_plus - J_min) / (2 * eta_perturb * Delta)
-    return problem.C.T @ gradient_est
-
-
-def solve_spsa(problem, x_init, max_iter=50000, a=0.5, a_eps=1000, 
-               r_epsilon=0.602, e=1e-4, r_nu=0.101, obj_interval=2000, verbose=True):
-    
-    x = x_init.copy()
-    x_hist = np.zeros((max_iter, len(x)))
-    x_hist[0] = x
-    
-    iter_hist = [0]
-    eff_hist = []
-    kw_hist = []
-    var_hist = []
-    
-    # Initial evaluation
-    P_init = x_to_matrix(x, problem.N, problem.edge_matrix, problem.bUndirected)
-    initial_metrics = problem.evaluate_metrics(P_init)
-    eff_hist.append(initial_metrics['Eff_Idx'])
-    kw_hist.append(initial_metrics['K_W'])
-    var_hist.append(initial_metrics['Net_Var'])
-    
-    if verbose:
-        print(f"Initial Efficiency: {initial_metrics['Eff_Idx']:.6f}")
-        print(f"Initial K_W: {initial_metrics['K_W']:.6f}")
-        print(f"Initial Variance: {initial_metrics['Net_Var']:.6f}")
-        print(f"\nStarting SPSA optimization...")
-        print(f"{'Iter':<8} {'Efficiency':<12} {'K_W':<12} {'Variance':<12} {'Status':<15}")
-        print("-" * 70)
-    
-    best_eff = initial_metrics['Eff_Idx']
-    best_x = x.copy()
-    
-    for k in range(max_iter - 1):
-        alpha_k = a / (a_eps + k + 1) ** r_epsilon
-        eta_k = e / (k + 1) ** r_nu
-        
-        grad = g_spsa(problem, x, eta_k)
-        x_new = x - alpha_k * grad
-        
-        if np.any(x_new < problem.eta) or np.any(x_new > 1 - problem.eta):
-            x_new = projection_markov(x_new, problem.eta, problem.neighborhoods, problem.mA)
-        
-        x = x_new
-        x_hist[k + 1] = x
-        
-        if (k + 1) % obj_interval == 0:
-            start_avg = max(0, int(0.5 * (k + 1)))
-            x_avg = np.mean(x_hist[start_avg:k+2], axis=0)
-            
-            P_avg = x_to_matrix(x_avg, problem.N, problem.edge_matrix, problem.bUndirected)
-            metrics = problem.evaluate_metrics(P_avg)
-            
-            iter_hist.append(k + 1)
-            eff_hist.append(metrics['Eff_Idx'])
-            kw_hist.append(metrics['K_W'])
-            var_hist.append(metrics['Net_Var'])
-            
-            if metrics['Eff_Idx'] > best_eff:
-                best_eff = metrics['Eff_Idx']
-                best_x = x_avg.copy()
-                status = "✓ New best!"
+            if pi is not None:
+                intensity = min(pi[i] / (pi_max + 1e-12), 1.0)
+                nc = plt.cm.Blues(0.25 + 0.65 * intensity)
             else:
-                status = ""
-            
-            if verbose:
-                print(f"{k+1:<8} {metrics['Eff_Idx']:<12.6f} {metrics['K_W']:<12.6f} {metrics['Net_Var']:<12.6f} {status:<15}")
-    
-    if verbose:
-        print("-" * 70)
-        print(f"Final Efficiency: {eff_hist[-1]:.6f}")
-        print(f"Best Efficiency found: {best_eff:.6f}")
-        improvement = best_eff - initial_metrics['Eff_Idx']
-        pct = (best_eff / initial_metrics['Eff_Idx'] - 1) * 100
-        print(f"Improvement: {improvement:.6f} ({pct:.2f}% increase)")
-    
-    return np.array(iter_hist), np.array(eff_hist), np.array(kw_hist), np.array(var_hist), best_x, initial_metrics
+                nc = '#b0d4f1'
+            circle = plt.Circle((c, r), NODE_RADIUS, color=nc, ec='black',
+                                linewidth=1.2, zorder=3)
+            ax.add_patch(circle)
+            if show_node_labels:
+                ax.text(c, r, str(i), ha='center', va='center',
+                        fontsize=10, zorder=4, color='white')
 
-
-# ============================================================================
-# GRID NETWORK PLOTTING
-# ============================================================================
-
-def plot_grid_network(n, obstacles, node_positions, new_to_original, mA, W, 
-                      P=None, pi=None, title="Grid Network", filename=None):
-    """
-    Plot the grid network with obstacles.
-    
-    Parameters:
-        n: Grid size
-        obstacles: List of obstacle node indices (in original coordinates)
-        node_positions: Dict mapping new node index to (row, col)
-        new_to_original: Dict mapping new index to original index
-        mA: Adjacency matrix
-        W: Travel time matrix
-        P: Transition matrix (optional)
-        pi: Stationary distribution (optional)
-        title: Plot title
-        filename: Save filename (optional)
-    """
-    fig, ax = plt.subplots(1, 1, figsize=(10, 10))
-    
-    # Grid spacing
-    spacing = 1.0
-    
-    # Draw grid cells (background)
-    for row in range(n):
-        for col in range(n):
-            orig_idx = row * n + col
-            x_pos = col * spacing
-            y_pos = (n - 1 - row) * spacing  # Flip y so row 0 is at top
-            
-            if orig_idx in obstacles:
-                # Draw obstacle as dark gray square
-                rect = patches.Rectangle((x_pos - 0.4, y_pos - 0.4), 0.8, 0.8,
-                                         facecolor='#404040', edgecolor='black', linewidth=2)
-                ax.add_patch(rect)
-                ax.text(x_pos, y_pos, 'X', fontsize=16, ha='center', va='center', 
-                       color='white', fontweight='bold')
-    
-    # Draw edges
-    N = mA.shape[0]
-    for i in range(N):
-        for j in range(N):
-            if mA[i, j] > 0:
-                row_i, col_i = node_positions[i]
-                row_j, col_j = node_positions[j]
-                
-                x1 = col_i * spacing
-                y1 = (n - 1 - row_i) * spacing
-                x2 = col_j * spacing
-                y2 = (n - 1 - row_j) * spacing
-                
-                # Edge properties
-                if P is not None:
-                    linewidth = 1 + P[i, j] * 8
-                    alpha = 0.3 + P[i, j] * 0.7
-                else:
-                    linewidth = 1.5
-                    alpha = 0.5
-                
-                # Color by travel time
-                w_normalized = (W[i, j] - W[W > 0].min()) / (W[W > 0].max() - W[W > 0].min() + 1e-6)
-                color = plt.cm.Reds(0.3 + w_normalized * 0.7)
-                
-                # Draw arrow
-                dx, dy = x2 - x1, y2 - y1
-                length = np.sqrt(dx**2 + dy**2)
-                if length > 0:
-                    # Shorten arrow to not overlap with nodes
-                    shrink = 0.25
-                    x1_adj = x1 + dx * shrink / length
-                    y1_adj = y1 + dy * shrink / length
-                    x2_adj = x2 - dx * shrink / length
-                    y2_adj = y2 - dy * shrink / length
-                    
-                    ax.annotate('', xy=(x2_adj, y2_adj), xytext=(x1_adj, y1_adj),
-                               arrowprops=dict(arrowstyle='->', color=color,
-                                             lw=linewidth, alpha=alpha,
-                                             connectionstyle='arc3,rad=0.1'))
-    
-    # Draw nodes
-    for new_idx in range(N):
-        row, col = node_positions[new_idx]
-        x_pos = col * spacing
-        y_pos = (n - 1 - row) * spacing
-        
-        # Node color based on pi
-        if pi is not None:
-            pi_normalized = (pi[new_idx] - pi.min()) / (pi.max() - pi.min() + 1e-6)
-            node_color = plt.cm.Blues(0.3 + pi_normalized * 0.7)
-        else:
-            node_color = '#6699cc'
-        
-        circle = plt.Circle((x_pos, y_pos), 0.2, facecolor=node_color, 
-                            edgecolor='black', linewidth=2, zorder=10)
-        ax.add_patch(circle)
-        
-        # Node label (original index)
-        orig_idx = new_to_original[new_idx]
-        ax.text(x_pos, y_pos, str(orig_idx), fontsize=10, ha='center', va='center',
-               fontweight='bold', zorder=11)
-        
-        # Show pi value below node
-        if pi is not None:
-            ax.text(x_pos, y_pos - 0.35, f'{pi[new_idx]:.3f}', fontsize=8, 
-                   ha='center', va='top', color='darkblue')
-    
-    # Legend
-    legend_text = "Node labels = Original index\n"
-    if P is not None:
-        legend_text += "Edge thickness = Transition prob.\n"
-    legend_text += "Edge color = Travel time (darker = longer)"
-    if pi is not None:
-        legend_text += "\nNode color = Coverage π (darker = higher)"
-    legend_text += "\nGray square = Obstacle"
-    
-    ax.text(0.02, 0.98, legend_text, transform=ax.transAxes, fontsize=10,
-           verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
-    
-    ax.set_xlim(-0.7, (n - 1) * spacing + 0.7)
-    ax.set_ylim(-0.7, (n - 1) * spacing + 0.7)
+    ax.set_xlim(-0.6, n - 0.4)
+    ax.set_ylim(n - 0.4, -0.6)
     ax.set_aspect('equal')
+    ax.set_title(title, fontsize=11, fontweight='bold', pad=10)
     ax.axis('off')
-    ax.set_title(title, fontsize=14, fontweight='bold')
-    
+
     plt.tight_layout()
-    
-    if filename:
-        plt.savefig(filename, dpi=150, bbox_inches='tight')
-        print(f"✓ Grid plot saved to '{filename}'")
-    
-    plt.show()
-    return fig
+    plt.savefig(filename, dpi=300, bbox_inches='tight')
+    print(f"  -> {filename}")
+    plt.close()
 
 
 # ============================================================================
-# MAIN TEST FUNCTION
+# SUMMARY TABLE FIGURE
 # ============================================================================
 
-def test_grid_surveillance():
-    """Test surveillance optimization on 5x5 grid with center obstacle."""
-    
-    print("="*80)
-    print("GRID NETWORK SURVEILLANCE OPTIMIZATION")
-    print("="*80)
-    
-    # Generate 5x5 grid with center obstacle (node 12)
-    n = 5
-    center_node = (n * n) // 2  # Node 12 for 5x5 grid
-    obstacles = [center_node]
-    
-    print(f"\nGrid size: {n}×{n} = {n*n} nodes")
-    print(f"Obstacle at node: {center_node} (center)")
-    print(f"Active nodes: {n*n - len(obstacles)}")
-    
-    # Generate network
-    mA, node_positions, orig_to_new, new_to_orig, grid_size, obs = generate_grid_network(n, obstacles)
-    N = mA.shape[0]
-    
-    print(f"\nNetwork structure:")
-    print(f"  Nodes: {N}")
-    print(f"  Edges: {int(mA.sum())}")
-    
-    # Generate travel times
-    W = generate_travel_times(mA, node_positions, seed=42)
-    
-    # Target stationary distribution (uniform for now)
-    pi_hat = np.ones(N) / N
-    
-    print(f"\nTarget stationary distribution: uniform (π₀ = 1/{N} = {1/N:.4f})")
-    
-    # Create problem instance
-    problem = GridSurveillanceProblem(
-        mA=mA,
-        W=W,
-        eta=1e-4,
-        pi_hat=pi_hat,
-        pi_penalty_weight=1e3
-    )
-    
-    # Initial policy: uniform transitions
-    x_init = np.zeros(problem.d)
-    for i, subset in enumerate(problem.neighborhoods):
-        if subset:
-            for idx in subset:
-                x_init[idx] = 1.0 / len(subset)
-    
-    # Plot initial network
-    print("\n" + "-"*40)
-    print("Plotting initial grid network...")
-    P_init = x_to_matrix(x_init, N, problem.edge_matrix, problem.bUndirected)
-    init_metrics = problem.evaluate_metrics(P_init)
-    
-    plot_grid_network(n, obstacles, node_positions, new_to_orig, mA, W,
-                      P=None, pi=None,
-                      title=f"{n}×{n} Grid Network (Obstacle at Center)",
-                      filename='grid_network_structure.png')
-    
-    # Run optimization
-    print("\n" + "="*80)
-    iter_hist, eff_hist, kw_hist, var_hist, best_x, initial_metrics = solve_spsa(
-        problem=problem,
-        x_init=x_init,
-        max_iter=50000,
-        a=0.5,
-        a_eps=1000,
-        e=1e-4,
-        r_nu=0.101,
-        obj_interval=2500,
-        verbose=True
-    )
-    
-    # Final results
-    P_final = x_to_matrix(best_x, N, problem.edge_matrix, problem.bUndirected)
-    final_metrics = problem.evaluate_metrics(P_final)
-    
-    print("\n" + "="*80)
-    print("FINAL RESULTS")
-    print("="*80)
-    
-    print(f"\nMetrics Comparison:")
-    print(f"{'Metric':<25} {'Initial':<15} {'Final':<15} {'Change':<15}")
-    print("-" * 70)
-    print(f"{'Efficiency Index λ':<25} {initial_metrics['Eff_Idx']:<15.6f} {final_metrics['Eff_Idx']:<15.6f} {final_metrics['Eff_Idx'] - initial_metrics['Eff_Idx']:+.6f}")
-    print(f"{'Mean Patrol Time K_W':<25} {initial_metrics['K_W']:<15.6f} {final_metrics['K_W']:<15.6f} {final_metrics['K_W'] - initial_metrics['K_W']:+.6f}")
-    print(f"{'Path Variance V_W':<25} {initial_metrics['Net_Var']:<15.6f} {final_metrics['Net_Var']:<15.6f} {final_metrics['Net_Var'] - initial_metrics['Net_Var']:+.6f}")
-    print(f"{'Coverage Error ||π-π₀||':<25} {initial_metrics['pi_error']:<15.6f} {final_metrics['pi_error']:<15.6f} {final_metrics['pi_error'] - initial_metrics['pi_error']:+.6f}")
-    
-    pct_improvement = (final_metrics['Eff_Idx'] / initial_metrics['Eff_Idx'] - 1) * 100
-    print(f"\nEfficiency improvement: {pct_improvement:.2f}%")
-    
-    # Plot optimal policy on grid
-    print("\n" + "-"*40)
-    print("Plotting optimal surveillance policy...")
-    plot_grid_network(n, obstacles, node_positions, new_to_orig, mA, W,
-                      P=P_final, pi=final_metrics['pi'],
-                      title="Optimal Surveillance Policy on Grid",
-                      filename='grid_optimal_policy.png')
-    
-    # Plot convergence
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-    
-    # Plot 1: Efficiency
-    axes[0, 0].plot(iter_hist, eff_hist, 'b-', linewidth=2, marker='o', markersize=4)
-    axes[0, 0].axhline(y=initial_metrics['Eff_Idx'], color='g', linestyle='--', 
-                       label=f"Initial = {initial_metrics['Eff_Idx']:.4f}")
-    axes[0, 0].axhline(y=final_metrics['Eff_Idx'], color='r', linestyle='--',
-                       label=f"Final = {final_metrics['Eff_Idx']:.4f}")
-    axes[0, 0].set_xlabel('Iteration')
-    axes[0, 0].set_ylabel(r'Efficiency Index $\lambda$')
-    axes[0, 0].set_title(r'Efficiency Index ($\uparrow$ higher is better)')
-    axes[0, 0].legend()
-    axes[0, 0].grid(True, alpha=0.3)
-    
-    # Plot 2: Mean Patrol Time
-    axes[0, 1].plot(iter_hist, kw_hist, 'orange', linewidth=2, marker='o', markersize=4)
-    axes[0, 1].axhline(y=initial_metrics['K_W'], color='g', linestyle='--',
-                       label=f"Initial = {initial_metrics['K_W']:.4f}")
-    axes[0, 1].axhline(y=final_metrics['K_W'], color='r', linestyle='--',
-                       label=f"Final = {final_metrics['K_W']:.4f}")
-    axes[0, 1].set_xlabel('Iteration')
-    axes[0, 1].set_ylabel(r'Mean Patrol Time $K_{\mathcal{W}}$')
-    axes[0, 1].set_title('Mean Patrol Time')
-    axes[0, 1].legend()
-    axes[0, 1].grid(True, alpha=0.3)
-    
-    # Plot 3: Path Variance
-    axes[1, 0].plot(iter_hist, var_hist, 'purple', linewidth=2, marker='o', markersize=4)
-    axes[1, 0].axhline(y=initial_metrics['Net_Var'], color='g', linestyle='--',
-                       label=f"Initial = {initial_metrics['Net_Var']:.4f}")
-    axes[1, 0].axhline(y=final_metrics['Net_Var'], color='r', linestyle='--',
-                       label=f"Final = {final_metrics['Net_Var']:.4f}")
-    axes[1, 0].set_xlabel('Iteration')
-    axes[1, 0].set_ylabel(r'Path Variance $V_{\mathcal{W}}$')
-    axes[1, 0].set_title(r'Path Variance ($\uparrow$ higher = more unpredictable)')
-    axes[1, 0].legend()
-    axes[1, 0].grid(True, alpha=0.3)
-    
-    # Plot 4: Mean-Variance Tradeoff
-    scatter = axes[1, 1].scatter(kw_hist, var_hist, c=iter_hist, cmap='viridis', s=50, alpha=0.7)
-    axes[1, 1].scatter(initial_metrics['K_W'], initial_metrics['Net_Var'], 
-                      color='green', s=300, marker='*', label='Initial', zorder=5, edgecolor='black')
-    axes[1, 1].scatter(final_metrics['K_W'], final_metrics['Net_Var'],
-                      color='red', s=300, marker='*', label='Final', zorder=5, edgecolor='black')
-    axes[1, 1].set_xlabel(r'Mean Patrol Time $K_{\mathcal{W}}$')
-    axes[1, 1].set_ylabel(r'Path Variance $V_{\mathcal{W}}$')
-    axes[1, 1].set_title('Mean-Variance Tradeoff')
-    axes[1, 1].legend()
-    axes[1, 1].grid(True, alpha=0.3)
-    cbar = plt.colorbar(scatter, ax=axes[1, 1])
-    cbar.set_label('Iteration')
-    
-    plt.tight_layout()
-    plt.savefig('grid_surveillance_results.png', dpi=150)
-    print("\n✓ Convergence plot saved to 'grid_surveillance_results.png'")
-    plt.show()
-    
-    return best_x, final_metrics
+def plot_summary_table(rows, filename='fig_table_deterministic.png'):
+    fig, ax = plt.subplots(figsize=(8, 2.0 + 0.35 * len(rows)))
+    ax.axis('off')
 
+    col_labels = ['Policy', r'$K_{\mathcal{W}}$', r'$V_{\mathcal{W}}$',
+                  r'$\lambda = V/K$', r'$\|\pi - \hat{\mu}\|$']
+    cell_text = []
+    for r in rows:
+        cell_text.append([
+            r['Policy'],
+            f"{r['K_W']:.2f}",
+            f"{r['V_W']:.2f}",
+            f"{r['lambda']:.2f}",
+            '0' if r['pi_err'] < 1e-8 else f"{r['pi_err']:.1e}"
+        ])
+
+    table = ax.table(cellText=cell_text, colLabels=col_labels,
+                     loc='center', cellLoc='center')
+    table.auto_set_font_size(False)
+    table.set_fontsize(9)
+    table.scale(1.0, 1.6)
+
+    for (row, col), cell in table.get_celld().items():
+        if row == 0:
+            cell.set_facecolor('#4472C4')
+            cell.set_text_props(color='white', fontweight='bold')
+        elif row % 2 == 0:
+            cell.set_facecolor('#D9E2F3')
+        cell.set_edgecolor('#999999')
+
+    plt.title('Surveillance Policies on $5 \\times 5$ Grid (Deterministic Weights)',
+              fontsize=11, fontweight='bold', pad=15)
+    plt.tight_layout()
+    plt.savefig(filename, dpi=300, bbox_inches='tight')
+    print(f"  -> {filename}")
+    plt.close()
+
+
+def plot_summary_table_full(rows_det, rows_stoch, filename='fig_table_full.png'):
+    fig, ax = plt.subplots(figsize=(9, 2.5 + 0.35 * (len(rows_det) + len(rows_stoch))))
+    ax.axis('off')
+
+    col_labels = ['Setting', 'Policy', r'$K_{\mathcal{W}}$', r'$V_{\mathcal{W}}$',
+                  r'$\lambda$', r'$\|\pi - \hat{\mu}\|$']
+    cell_text = []
+    for r in rows_det:
+        cell_text.append([
+            r.get('Setting', 'Determ.'), r['Policy'],
+            f"{r['K_W']:.2f}", f"{r['V_W']:.2f}", f"{r['lambda']:.2f}",
+            '0' if r['pi_err'] < 1e-8 else f"{r['pi_err']:.1e}"
+        ])
+    for r in rows_stoch:
+        cell_text.append([
+            r.get('Setting', 'Stoch.'), r['Policy'],
+            f"{r['K_W']:.2f}", f"{r['V_W']:.2f}", f"{r['lambda']:.2f}",
+            '0' if r['pi_err'] < 1e-8 else f"{r['pi_err']:.1e}"
+        ])
+
+    table = ax.table(cellText=cell_text, colLabels=col_labels,
+                     loc='center', cellLoc='center')
+    table.auto_set_font_size(False)
+    table.set_fontsize(9)
+    table.scale(1.0, 1.6)
+
+    n_det = len(rows_det)
+    for (row, col), cell in table.get_celld().items():
+        if row == 0:
+            cell.set_facecolor('#4472C4')
+            cell.set_text_props(color='white', fontweight='bold')
+            continue
+        if row <= n_det:
+            cell.set_facecolor('#D9E2F3')
+        else:
+            cell.set_facecolor('#FDE9D9')
+        cell.set_edgecolor('#999999')
+
+    plt.title('Summary: Surveillance Policies on $5 \\times 5$ Grid',
+              fontsize=11, fontweight='bold', pad=15)
+    plt.tight_layout()
+    plt.savefig(filename, dpi=300, bbox_inches='tight')
+    print(f"  -> {filename}")
+    plt.close()
+
+
+# ============================================================================
+# CONVERGENCE PLOTS (supplementary)
+# ============================================================================
+
+def save_convergence_plots(iter_h, eff_h, kw_h, var_h, pierr_h,
+                            m_init, m_opt, prefix, label):
+    for vals, init_v, opt_v, ylabel, tit, col, suf in [
+        (var_h, m_init['Net_Var'], m_opt['Net_Var'],
+         r'$V_{\mathcal{W}}$', 'Variance', 'purple', 'var'),
+        (kw_h, m_init['K_W'], m_opt['K_W'],
+         r'$K_{\mathcal{W}}$', 'Mean', 'orange', 'mean'),
+        (eff_h, m_init['Eff_Idx'], m_opt['Eff_Idx'],
+         r'$\lambda$', 'Surprise Index', 'blue', 'eff'),
+    ]:
+        fig, ax = plt.subplots(figsize=(7, 4))
+        ax.plot(iter_h, vals, color=col, lw=1.5)
+        ax.axhline(init_v, color='green', ls='--', lw=1, label=f'Init = {init_v:.2f}')
+        ax.axhline(opt_v, color='red', ls='--', lw=1, label=f'Opt = {opt_v:.2f}')
+        ax.set_xlabel('Iteration'); ax.set_ylabel(ylabel)
+        ax.set_title(f'{label} — {tit} Convergence')
+        ax.legend(fontsize=8); ax.grid(alpha=0.3)
+        plt.tight_layout()
+        plt.savefig(f'{prefix}_{suf}_conv.png', dpi=150, bbox_inches='tight')
+        plt.close()
+
+    if len(pierr_h) > 0:
+        fig, ax = plt.subplots(figsize=(7, 4))
+        ax.plot(iter_h, pierr_h, color='green', lw=1.5)
+        ax.set_xlabel('Iteration')
+        ax.set_ylabel(r'$\|\pi - \hat{\mu}\|_2$')
+        ax.set_title(f'{label} — Distribution Error')
+        ax.grid(alpha=0.3)
+        plt.tight_layout()
+        plt.savefig(f'{prefix}_pierr_conv.png', dpi=150, bbox_inches='tight')
+        plt.close()
+
+    print(f"  -> Supplementary: {prefix}_*.png")
+
+
+# ============================================================================
+# RUN OPTIMIZATION
+# ============================================================================
+
+def run_optimization(mA, W, W2, pi_hat, objective_type, seed_offset,
+                     label, max_iter=15000, base_seed=42, verbose=True):
+    problem = EfficiencyProblemInstanceStochastic(
+        mA=mA, W=W, W2=W2,
+        eta=1e-6, pi_hat=pi_hat,
+        objective_type=objective_type,
+        use_hard_constraint=True
+    )
+    x_init = problem.get_feasible_initial_point()
+    P_init = x_to_matrix(x_init, problem.N, problem.edge_matrix, False)
+    metrics_init = problem.evaluate_metrics(P_init)
+
+    np.random.seed(base_seed + seed_offset)
+    print(f"\n  Running SPSA: {label} (objective={objective_type})...")
+    iter_h, eff_h, kw_h, var_h, pierr_h, best_x, best_obj = solve_spsa_efficiency(
+        problem, x_init, verbose=verbose, max_iter=max_iter
+    )
+
+    P_opt = x_to_matrix(best_x, problem.N, problem.edge_matrix, False)
+    metrics_opt = problem.evaluate_metrics(P_opt)
+
+    return {
+        'problem': problem, 'P_init': P_init, 'P_opt': P_opt,
+        'metrics_init': metrics_init, 'metrics_opt': metrics_opt,
+        'iter_h': iter_h, 'eff_h': eff_h, 'kw_h': kw_h,
+        'var_h': var_h, 'pierr_h': pierr_h, 'best_x': best_x,
+    }
+
+
+# ============================================================================
+# MAIN
+# ============================================================================
 
 if __name__ == "__main__":
-    np.random.seed(42)
-    print("Running Grid Surveillance Optimization\n")
-    best_x, metrics = test_grid_surveillance()
-    print("\n" + "="*80)
-    print("TEST COMPLETED!")
-    print("="*80)
+    SEED = 42
+    np.random.seed(SEED)
+    n = 5
+    obstacles = [(2,2)]
+
+    print("=" * 80)
+    print("SURVEILLANCE NETWORK OPTIMIZATION — PUBLICATION EXPERIMENTS")
+    print("=" * 80)
+
+    # ------------------------------------------------------------------
+    # SETUP
+    # ------------------------------------------------------------------
+    print(f"\nGrid: {n}x{n}, Obstacle: {obstacles}")
+
+    mA, W_mean, _, CV_det, obstacle_mask, grid_positions = \
+        generate_grid_network_stochastic(n, obstacles=obstacles,
+                                          cv_low=0.0, cv_high=0.0,
+                                          high_cv_fraction=0.0, seed=SEED)
+    W2_det = W_mean ** 2
+    pi_hat = create_grid_target_distribution(n, obstacle_mask)
+
+    # Baseline (uniform)
+    problem_base = EfficiencyProblemInstanceStochastic(
+        mA=mA, W=W_mean, W2=W2_det, eta=1e-4, pi_hat=pi_hat,
+        objective_type='minimize_variance', use_hard_constraint=True)
+    x_base = problem_base.get_feasible_initial_point()
+    P_uniform = x_to_matrix(x_base, problem_base.N, problem_base.edge_matrix, False)
+    m_uniform = problem_base.evaluate_metrics(P_uniform)
+
+    print(f"\nBaseline (Uniform):")
+    print(f"  K_W={m_uniform['K_W']:.2f}, V_W={m_uniform['Net_Var']:.2f}, "
+          f"lambda={m_uniform['Eff_Idx']:.2f}")
+
+    # ------------------------------------------------------------------
+    # CASE 1A: Min Variance
+    # ------------------------------------------------------------------
+    print("\n" + "=" * 80)
+    print("CASE 1A: Minimize Variance (Deterministic)")
+    print("=" * 80)
+    res_1a = run_optimization(mA, W_mean, W2_det, pi_hat,
+                               'minimize_variance', seed_offset=1,
+                               label='1A: Min Var', max_iter=5000)
+    m_1a = res_1a['metrics_opt']
+    print(f"\n  V_W: {m_uniform['Net_Var']:.2f} -> {m_1a['Net_Var']:.2f}")
+
+    # ------------------------------------------------------------------
+    # CASE 1B: Max Surprise (MAIN RESULT)
+    # ------------------------------------------------------------------
+    print("\n" + "=" * 80)
+    print("CASE 1B: MAXIMIZE SURPRISE INDEX (Deterministic) — MAIN RESULT")
+    print("=" * 80)
+    res_1b = run_optimization(mA, W_mean, W2_det, pi_hat,
+                               'maximize_efficiency', seed_offset=3,
+                               label='1B: Max Surprise')
+    m_1b = res_1b['metrics_opt']
+    print(f"\n  lambda: {m_uniform['Eff_Idx']:.2f} -> {m_1b['Eff_Idx']:.2f}")
+    print(f"  K_W={m_1b['K_W']:.2f}, V_W={m_1b['Net_Var']:.2f}")
+
+    # ------------------------------------------------------------------
+    # CASE 2: Stochastic Max Surprise
+    # ------------------------------------------------------------------
+    print("\n" + "=" * 80)
+    print("CASE 2: MAXIMIZE SURPRISE INDEX (Stochastic Weights)")
+    print("=" * 80)
+
+    cv_low, cv_high, high_cv_frac = 0.3, 1.5, 0.4
+    mA_s, W_s, W2_s, CV_s, obs_s, gpos_s = \
+        generate_grid_network_stochastic(n, obstacles, cv_low=cv_low,
+                                          cv_high=cv_high,
+                                          high_cv_fraction=high_cv_frac,
+                                          seed=SEED)
+    pi_hat_s = create_grid_target_distribution(n, obs_s)
+
+    prob_s_base = EfficiencyProblemInstanceStochastic(
+        mA=mA_s, W=W_s, W2=W2_s, eta=1e-4, pi_hat=pi_hat_s,
+        objective_type='maximize_efficiency', use_hard_constraint=True)
+    x_s_base = prob_s_base.get_feasible_initial_point()
+    P_s_uniform = x_to_matrix(x_s_base, prob_s_base.N, prob_s_base.edge_matrix, False)
+    m_s_uniform = prob_s_base.evaluate_metrics(P_s_uniform)
+
+    mask_edges = mA_s > 0
+    cvs = CV_s[mask_edges]
+    print(f"\n  CV stats: min={cvs.min():.2f}, max={cvs.max():.2f}, mean={cvs.mean():.2f}")
+
+    res_2 = run_optimization(mA_s, W_s, W2_s, pi_hat_s,
+                              'maximize_efficiency', seed_offset=10,
+                              label='2: Max Surprise (Stoch)')
+    m_2 = res_2['metrics_opt']
+    print(f"\n  lambda: {m_s_uniform['Eff_Idx']:.2f} -> {m_2['Eff_Idx']:.2f}")
+
+    P_opt_s = res_2['P_opt']
+    P_values = P_opt_s[mask_edges]
+    CV_values = CV_s[mask_edges]
+    low_cv = CV_values < 1; high_cv = CV_values >= 1
+    avg_P_low = np.mean(P_values[low_cv]) if np.any(low_cv) else 0
+    avg_P_high = np.mean(P_values[high_cv]) if np.any(high_cv) else 0
+    corr_PCV = np.corrcoef(P_values, CV_values)[0, 1]
+    print(f"  P vs CV: avg_P(low)={avg_P_low:.4f}, avg_P(high)={avg_P_high:.4f}, "
+          f"corr={corr_PCV:.4f}")
+
+    # ==================================================================
+    # PUBLICATION FIGURES
+    # ==================================================================
+    print("\n" + "=" * 80)
+    print("GENERATING PUBLICATION FIGURES")
+    print("=" * 80)
+
+    # --- Fig 1a: Initial uniform policy ---
+    plot_policy_publication(
+        n, mA, obstacle_mask, grid_positions,
+        P_uniform, m_uniform['pi_W'],
+        title='Initial Uniform Policy',
+        filename='fig1a_uniform_policy.png')
+
+    # --- Fig 1b: Minimum-variance policy ---
+    plot_policy_publication(
+        n, mA, obstacle_mask, grid_positions,
+        res_1a['P_opt'], m_1a['pi_W'],
+        title='Minimum-Variance Policy',
+        filename='fig1b_min_variance_policy.png')
+
+    # --- Fig 2: Max-Surprise policy (deterministic) ---
+    plot_policy_publication(
+        n, mA, obstacle_mask, grid_positions,
+        res_1b['P_opt'], m_1b['pi_W'],
+        title='Maximum-Surprise Policy (Deterministic Weights)',
+        filename='fig2_max_surprise_deterministic.png')
+
+    # Fig 3
+    plot_policy_publication(
+        n, mA_s, obs_s, gpos_s,
+        P_opt_s, m_2['pi_W'],
+        title='Maximum-Surprise Policy (Stochastic Weights)',
+        filename='fig3_max_surprise_stochastic.png',
+        cv_matrix=CV_s)
+
+    # Tables
+    rows_det = [
+        {'Policy': 'Uniform',           'K_W': m_uniform['K_W'],
+         'V_W': m_uniform['Net_Var'],    'lambda': m_uniform['Eff_Idx'],
+         'pi_err': m_uniform['pi_error']},
+        {'Policy': 'Min-Variance',      'K_W': m_1a['K_W'],
+         'V_W': m_1a['Net_Var'],         'lambda': m_1a['Eff_Idx'],
+         'pi_err': m_1a['pi_error']},
+        {'Policy': 'Max-Surprise',      'K_W': m_1b['K_W'],
+         'V_W': m_1b['Net_Var'],         'lambda': m_1b['Eff_Idx'],
+         'pi_err': m_1b['pi_error']},
+    ]
+    plot_summary_table(rows_det, filename='fig_table_deterministic.png')
+
+    rows_det_full = [dict(r, Setting='Determ.') for r in rows_det]
+    rows_stoch = [
+        {'Setting': 'Stochastic', 'Policy': 'Uniform',
+         'K_W': m_s_uniform['K_W'], 'V_W': m_s_uniform['Net_Var'],
+         'lambda': m_s_uniform['Eff_Idx'], 'pi_err': m_s_uniform['pi_error']},
+        {'Setting': 'Stochastic', 'Policy': 'Max-Surprise',
+         'K_W': m_2['K_W'], 'V_W': m_2['Net_Var'],
+         'lambda': m_2['Eff_Idx'], 'pi_err': m_2['pi_error']},
+    ]
+    plot_summary_table_full(rows_det_full, rows_stoch,
+                             filename='fig_table_full.png')
+
+    # --- Optimization report ---
+    report_lines = []
+    report_lines.append("SURVEILLANCE OPTIMIZATION REPORT")
+    report_lines.append("=" * 60)
+    report_lines.append(f"Grid: {n}x{n},  Obstacle: {obstacles},  eta = 1e-4")
+    report_lines.append(f"Target distribution: uniform (1/{n*n - len(obstacles)})")
+    report_lines.append(f"SPSA iterations: 10,000 per case")
+    report_lines.append("")
+    report_lines.append("-" * 60)
+    report_lines.append("DETERMINISTIC WEIGHTS (CV = 0)")
+    report_lines.append("-" * 60)
+    report_lines.append(f"{'Policy':<20} {'K_W':>10} {'V_W':>14} {'lambda':>12} {'pi_err':>10}")
+    report_lines.append("-" * 60)
+    for label, m in [('Uniform', m_uniform), ('Min-Variance', m_1a), ('Max-Surprise', m_1b)]:
+        report_lines.append(
+            f"{label:<20} {m['K_W']:>10.2f} {m['Net_Var']:>14.2f} "
+            f"{m['Eff_Idx']:>12.2f} {m['pi_error']:>10.1e}")
+    report_lines.append("")
+    var_red = (1 - m_1a['Net_Var'] / m_uniform['Net_Var']) * 100
+    lam_gain = m_1b['Eff_Idx'] / m_uniform['Eff_Idx']
+    report_lines.append(f"Min-Var: V_W reduced by {var_red:.1f}%  (near-Hamiltonian cycle)")
+    report_lines.append(f"Max-Surprise: lambda increased {lam_gain:.0f}x over uniform")
+    report_lines.append("")
+    report_lines.append("-" * 60)
+    report_lines.append("STOCHASTIC WEIGHTS")
+    report_lines.append(f"  CV_low ~ 0.3, CV_high ~ 1.5, high-CV fraction: 40%")
+    report_lines.append(f"  Edge CV stats: min={cvs.min():.2f}, max={cvs.max():.2f}, mean={cvs.mean():.2f}")
+    report_lines.append("-" * 60)
+    report_lines.append(f"{'Policy':<20} {'K_W':>10} {'V_W':>14} {'lambda':>12} {'pi_err':>10}")
+    report_lines.append("-" * 60)
+    for label, m in [('Uniform', m_s_uniform), ('Max-Surprise', m_2)]:
+        report_lines.append(
+            f"{label:<20} {m['K_W']:>10.2f} {m['Net_Var']:>14.2f} "
+            f"{m['Eff_Idx']:>12.2f} {m['pi_error']:>10.1e}")
+    report_lines.append("")
+    lam_gain_s = m_2['Eff_Idx'] / m_s_uniform['Eff_Idx']
+    report_lines.append(f"Max-Surprise (stoch): lambda increased {lam_gain_s:.0f}x over uniform")
+    report_lines.append(f"Corr(P, CV) = {corr_PCV:.4f}")
+    report_lines.append(f"  Avg P on low-CV edges:  {avg_P_low:.4f}")
+    report_lines.append(f"  Avg P on high-CV edges: {avg_P_high:.4f}")
+    report_lines.append("")
+    report_lines.append("-" * 60)
+    report_lines.append("FIGURES")
+    report_lines.append("-" * 60)
+    report_lines.append("fig1a_uniform_policy.png        — Initial uniform policy")
+    report_lines.append("fig1b_min_variance_policy.png   — Min-variance (cost of predictability)")
+    report_lines.append("fig2_max_surprise_deterministic.png — Max-surprise, deterministic")
+    report_lines.append("fig3_max_surprise_stochastic.png    — Max-surprise, stochastic (CV-colored)")
+    report_lines.append("fig_table_deterministic.png     — Summary table (deterministic)")
+    report_lines.append("fig_table_full.png              — Summary table (all)")
+    report_lines.append("supp_*.png                      — Convergence plots (e-companion)")
+
+    report_text = "\n".join(report_lines)
+    with open('optimization_report.txt', 'w') as f:
+        f.write(report_text)
+    print(f"  -> optimization_report.txt")
+
+    # Supplementary convergence plots
+    print("\n  Supplementary convergence plots...")
+    for res, m_init, pref, lab in [
+        (res_1a, m_uniform, 'supp_1a', '1A: Min-Var'),
+        (res_1b, m_uniform, 'supp_1b', '1B: Max-Surprise (Det)'),
+        (res_2, m_s_uniform, 'supp_2', '2: Max-Surprise (Stoch)'),
+    ]:
+        m_opt = res['metrics_opt']
+        save_convergence_plots(res['iter_h'], res['eff_h'], res['kw_h'],
+                                res['var_h'], res['pierr_h'],
+                                m_init, m_opt, pref, lab)
+
+    # ==================================================================
+    # CONSOLE SUMMARY
+    # ==================================================================
+    print("\n" + "=" * 80)
+    print("FINAL SUMMARY")
+    print("=" * 80)
+    print(f"\n{'Policy':<25} {'K_W':>10} {'V_W':>12} {'lambda':>10} {'pi_err':>10}")
+    print("-" * 70)
+    for label, m in [('Uniform', m_uniform), ('Min-Variance', m_1a),
+                     ('Max-Surprise', m_1b)]:
+        print(f"{label:<25} {m['K_W']:>10.2f} {m['Net_Var']:>12.2f} "
+              f"{m['Eff_Idx']:>10.2f} {m['pi_error']:>10.1e}")
+
+    print(f"\n{'Policy':<25} {'K_W':>10} {'V_W':>12} {'lambda':>10} {'pi_err':>10}")
+    print("-" * 70)
+    for label, m in [('Stoch. Uniform', m_s_uniform), ('Stoch. Max-Surprise', m_2)]:
+        print(f"{label:<25} {m['K_W']:>10.2f} {m['Net_Var']:>12.2f} "
+              f"{m['Eff_Idx']:>10.2f} {m['pi_error']:>10.1e}")
+
+    print("\n" + "=" * 80)
+    print("DONE!")
+    print("=" * 80)

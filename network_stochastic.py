@@ -2,9 +2,9 @@
 Markov Chain class with support for stochastic edge weights.
 
 Key difference from deterministic case:
-- W stores mean weights μ(i,j) = E[W(i,j)]
-- W2 stores second moments E[W²(i,j)], NOT the square of W
-- This allows Var[W(i,j)] = E[W²] - E[W]² > 0
+- W stores mean weights Î¼(i,j) = E[W(i,j)]
+- W2 stores second moments E[WÂ²(i,j)], NOT the square of W
+- This allows Var[W(i,j)] = E[WÂ²] - E[W]Â² > 0
 """
 
 import numpy as np
@@ -18,9 +18,9 @@ class MarkovChainStochastic:
     """
     Markov chain class that supports STOCHASTIC edge weights.
     
-    The variance formula uses E[W²] (second moment), which captures
+    The variance formula uses E[WÂ²] (second moment), which captures
     the stochasticity of edge weights through:
-        E[W²] = E[W]² + Var[W] = μ² × (1 + CV²)
+        E[WÂ²] = E[W]Â² + Var[W] = Î¼Â² Ã— (1 + CVÂ²)
     """
     
     def __init__(self, mA, x=None, W=None, W2=None, bUndirected=False):
@@ -28,9 +28,9 @@ class MarkovChainStochastic:
         Parameters:
             mA: Adjacency matrix
             x: Edge weight vector for transition probabilities
-            W: Mean weight matrix μ(i,j) = E[W(i,j)]
-            W2: Second moment matrix μ²(i,j) = E[W²(i,j)]
-                If None, defaults to W² (deterministic case)
+            W: Mean weight matrix Î¼(i,j) = E[W(i,j)]
+            W2: Second moment matrix Î¼Â²(i,j) = E[WÂ²(i,j)]
+                If None, defaults to WÂ² (deterministic case)
             bUndirected: Whether the graph is undirected
         """
         self.n = mA.shape[0]
@@ -44,12 +44,12 @@ class MarkovChainStochastic:
             self.W = np.ones((self.n, self.n))
         
         # Initialize second moments
-        # CRITICAL: If W2 is not provided, use W² (deterministic case)
+        # CRITICAL: If W2 is not provided, use WÂ² (deterministic case)
         # If W2 IS provided, use it directly (stochastic case)
         if W2 is not None:
             self.W2 = W2
         else:
-            # Deterministic case: E[W²] = E[W]²
+            # Deterministic case: E[WÂ²] = E[W]Â²
             self.W2 = self.W ** 2
         
         # Compute and store the edge variance matrix
@@ -104,9 +104,9 @@ class MarkovChainStochastic:
         """
         Compute time-weighted stationary distribution.
         
-        π_W(i) = π(i) × Ū(i) / Σ_k π(k) × Ū(k)
+        Ï€_W(i) = Ï€(i) Ã— Åª(i) / Î£_k Ï€(k) Ã— Åª(k)
         
-        where Ū(i) = Σ_j P(i,j) × μ(i,j) is the expected weight leaving state i.
+        where Åª(i) = Î£_j P(i,j) Ã— Î¼(i,j) is the expected weight leaving state i.
         """
         if self.pi is None:
             self.compute_pi()
@@ -121,7 +121,7 @@ class MarkovChainStochastic:
         return self.pi_W
     
     def compute_Z(self):
-        """Compute fundamental matrix Z = (I - P + Π)^(-1)."""
+        """Compute fundamental matrix Z = (I - P + Î )^(-1)."""
         if self.Pi is None:
             self.compute_Pi()
         I = np.eye(self.n)
@@ -132,7 +132,7 @@ class MarkovChainStochastic:
         """
         Compute mean first-passage time matrix M.
         
-        M(i,j) = E[τ(i,j)] where τ(i,j) is the first passage time from i to j.
+        M(i,j) = E[Ï„(i,j)] where Ï„(i,j) is the first passage time from i to j.
         """
         if self.Z is None:
             self.compute_Z()
@@ -156,20 +156,20 @@ class MarkovChainStochastic:
         """
         Compute variance of first-passage times.
         
-        CRITICAL: This uses W2 (second moment), NOT W² (square of mean).
+        CRITICAL: This uses W2 (second moment), NOT WÂ² (square of mean).
         This is where stochastic weights affect the variance!
         
         The variance includes contributions from both:
         1. Variability in the path taken (from P)
-        2. Variability in edge weights (from E[W²] - E[W]²)
+        2. Variability in edge weights (from E[WÂ²] - E[W]Â²)
         """
         if self.M is None:
             self.compute_M()
         
         I = np.eye(self.n)
         Ones = np.ones((self.n, self.n))
-        P_dot_W = np.multiply(self.P, self.W)    # P ⊙ μ
-        P_dot_W2 = np.multiply(self.P, self.W2)  # P ⊙ E[W²] (SECOND MOMENT!)
+        P_dot_W = np.multiply(self.P, self.W)    # P âŠ™ Î¼
+        P_dot_W2 = np.multiply(self.P, self.W2)  # P âŠ™ E[WÂ²] (SECOND MOMENT!)
         
         val_A = np.dot(self.pi, np.sum(P_dot_W2, axis=1))
         M_off_diag = self.M - np.diag(np.diag(self.M))
@@ -196,7 +196,7 @@ class MarkovChainStochastic:
         """
         Compute weighted Kemeny constant.
         
-        K_W = π_W^T × M × π_W
+        K_W = Ï€_W^T Ã— M Ã— Ï€_W
         """
         if self.pi_W is None:
             self.compute_pi_W()
@@ -209,7 +209,7 @@ class MarkovChainStochastic:
         """
         Compute network-level variance.
         
-        Net_Var = π_W^T × V × π_W
+        Net_Var = Ï€_W^T Ã— V Ã— Ï€_W
         """
         if self.pi_W is None:
             self.compute_pi_W()
@@ -220,9 +220,11 @@ class MarkovChainStochastic:
     
     def compute_efficiency_index(self):
         """
-        Compute efficiency index = Variance / Mean.
+        Compute surprise index S(P) = sqrt(V_W) / K_W.
         
-        Higher efficiency means more unpredictable patrol times.
+        Scale-invariant (dimensionless) measure of unpredictability.
+        This is a coefficient-of-variation type metric:
+        higher values mean more unpredictable patrol times.
         """
         if self.K_W is None:
             self.compute_kemeny_W()
@@ -230,7 +232,7 @@ class MarkovChainStochastic:
             self.compute_network_variance()
         if self.K_W == 0:
             return np.inf
-        self.Eff_Idx = self.Net_Var / self.K_W
+        self.Eff_Idx = np.sqrt(self.Net_Var) / self.K_W
         return self.Eff_Idx
     
     def get_weight_statistics(self):

@@ -362,7 +362,7 @@ class EfficiencyProblemInstance:
                  efficiency_target=None,
                  pi_penalty_weight=1e3):
         """
-        Problem instance for efficiency index optimization.
+        Problem instance for surprise index optimization.
         """
         self.mA = mA
         self.W = W
@@ -495,7 +495,7 @@ def projection(x_to_proj, problem, eta):
     return projection_markov(x_to_proj, eta=eta, neighborhoods=problem.neighborhoods, mA=problem.mA)
 
 
-def solve_spsa_efficiency(problem, x_init, max_iter=10000,
+def solve_spsa_efficiency(problem, x_init, max_iter=5000,
                           a=0.01, a_eps=100, r_epsilon=0.602,
                           e=1e-6, r_nu=0.101,
                           obj_interval=100, verbose=True):
@@ -822,7 +822,7 @@ def test_grid_with_obstacle():
     initial_metrics = problem.evaluate_metrics(P_init)
     
     print(f"\nInitial metrics:")
-    print(f"  Efficiency Index: {initial_metrics['Eff_Idx']:.6f}")
+    print(f"  Surprise Index: {initial_metrics['Eff_Idx']:.6f}")
     print(f"  K_W (Mean Patrol Time): {initial_metrics['K_W']:.6f}")
     print(f"  Variance: {initial_metrics['Net_Var']:.6f}")
     print(f"  π error (L2): {initial_metrics['pi_error']:.6f}")
@@ -841,7 +841,7 @@ def test_grid_with_obstacle():
     iter_hist, eff_hist, kw_hist, var_hist, best_x, _ = solve_spsa_efficiency(
         problem=problem,
         x_init=x_init,
-        max_iter=8000,
+        max_iter=5000,
         a=0.1,         # <--- Step size numerator
         a_eps=500,     # <--- Step size denominator constant
         e=1e-4,        # <--- Perturbation size numerator
@@ -861,7 +861,7 @@ def test_grid_with_obstacle():
     print(f"\nMetrics Comparison:")
     print(f"{'Metric':<25} {'Initial':<15} {'Final':<15} {'Change':<15}")
     print("-" * 70)
-    print(f"{'Efficiency Index λ':<25} {initial_metrics['Eff_Idx']:<15.6f} {final_metrics['Eff_Idx']:<15.6f} {final_metrics['Eff_Idx'] - initial_metrics['Eff_Idx']:+.6f}")
+    print(f"{'Surprise Index λ':<25} {initial_metrics['Eff_Idx']:<15.6f} {final_metrics['Eff_Idx']:<15.6f} {final_metrics['Eff_Idx'] - initial_metrics['Eff_Idx']:+.6f}")
     print(f"{'Mean Patrol Time K_W':<25} {initial_metrics['K_W']:<15.6f} {final_metrics['K_W']:<15.6f} {final_metrics['K_W'] - initial_metrics['K_W']:+.6f}")
     print(f"{'Path Variance V_W':<25} {initial_metrics['Net_Var']:<15.6f} {final_metrics['Net_Var']:<15.6f} {final_metrics['Net_Var'] - initial_metrics['Net_Var']:+.6f}")
     print(f"{'Coverage Error ||π-π₀||':<25} {initial_metrics['pi_error']:<15.6f} {final_metrics['pi_error']:<15.6f} {final_metrics['pi_error'] - initial_metrics['pi_error']:+.6f}")
@@ -881,15 +881,15 @@ def test_grid_with_obstacle():
     # Plot optimization convergence
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
     
-    # Plot 1: Efficiency Index
+    # Plot 1: Surprise Index
     axes[0, 0].plot(iter_hist, eff_hist, 'b-', linewidth=2, marker='o', markersize=4)
     axes[0, 0].axhline(y=initial_metrics['Eff_Idx'], color='g', linestyle='--', 
                        label=f"Initial = {initial_metrics['Eff_Idx']:.4f}")
     axes[0, 0].axhline(y=final_metrics['Eff_Idx'], color='r', linestyle='--',
                        label=f"Final = {final_metrics['Eff_Idx']:.4f}")
     axes[0, 0].set_xlabel('Iteration')
-    axes[0, 0].set_ylabel(r'Efficiency Index $\lambda$')
-    axes[0, 0].set_title(r'Efficiency Index ($\uparrow$ higher is better)')
+    axes[0, 0].set_ylabel(r'Surprise Index $\lambda$')
+    axes[0, 0].set_title(r'Surprise Index ($\uparrow$ higher is better)')
     axes[0, 0].legend()
     axes[0, 0].grid(True, alpha=0.3)
     

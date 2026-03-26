@@ -56,12 +56,17 @@ def analyze_policy_vs_cv(P, CV_matrix, mA, title="Policy vs CV Analysis"):
     return {'avg_P_low_cv': avg_P_low_cv, 'avg_P_high_cv': avg_P_high_cv, 'correlation': correlation}
 
 
-def test_deterministic_vs_stochastic():
+def test_deterministic_vs_stochastic(seed=42):
     """Compare optimization results between deterministic and stochastic weights."""
+    
+    # Set random seed for reproducibility
+    np.random.seed(seed)
     
     print("="*80)
     print("TEST: DETERMINISTIC vs STOCHASTIC WEIGHT COMPARISON")
     print("="*80)
+    print("Using HARD CONSTRAINT for stationary distribution (well-posed problem)")
+    print(f"Random seed: {seed}")
     
     # Grid parameters
     n = 5
@@ -77,7 +82,7 @@ def test_deterministic_vs_stochastic():
     # For deterministic: W2 = W²
     W2_det = W_mean ** 2
     
-    # Target distribution
+    # Target distribution (uniform over non-obstacle nodes)
     pi_hat = create_grid_target_distribution(n, obstacle_mask)
     
     # =========== CASE 1: DETERMINISTIC ===========
@@ -89,15 +94,11 @@ def test_deterministic_vs_stochastic():
         mA=mA, W=W_mean, W2=W2_det,
         eta=1e-4, pi_hat=pi_hat,
         objective_type='maximize_efficiency',
-        pi_penalty_weight=1e2
+        use_hard_constraint=True  # HARD CONSTRAINT for well-posed problem
     )
     
-    # Initial uniform policy
-    x_init = np.zeros(problem_det.d)
-    for i, subset in enumerate(problem_det.neighborhoods):
-        if len(subset) > 0:
-            for idx in subset:
-                x_init[idx] = 1.0 / len(subset)
+    # Get feasible initial point from the problem instance
+    x_init = problem_det.get_feasible_initial_point()
     
     P_init = x_to_matrix(x_init, problem_det.N, problem_det.edge_matrix, False)
     metrics_det_init = problem_det.evaluate_metrics(P_init)
@@ -108,10 +109,12 @@ def test_deterministic_vs_stochastic():
     print(f"  Variance: {metrics_det_init['Net_Var']:.6f}")
     print(f"  π error: {metrics_det_init['pi_error']:.6f}")
     
+    # Reset seed for reproducible SPSA
+    np.random.seed(seed + 1)
     print("\nRunning SPSA optimization (Deterministic)...")
     iter_det, eff_det, kw_det, var_det, pi_err_det, best_x_det, _ = solve_spsa_efficiency(
-        problem_det, x_init, max_iter=10000, a=0.02, a_eps=50, 
-        obj_interval=200, verbose=True
+        problem_det, x_init, verbose=True,
+        max_iter=10000
     )
     
     P_det = x_to_matrix(best_x_det, problem_det.N, problem_det.edge_matrix, False)
@@ -138,8 +141,11 @@ def test_deterministic_vs_stochastic():
         mA=mA, W=W_mean, W2=W2_stoch,
         eta=1e-4, pi_hat=pi_hat,
         objective_type='maximize_efficiency',
-        pi_penalty_weight=1e2
+        use_hard_constraint=True  # HARD CONSTRAINT for well-posed problem
     )
+    
+    # Get feasible initial point for stochastic problem (same as det since same constraints)
+    x_init_stoch = problem_stoch.get_feasible_initial_point()
     
     metrics_stoch_init = problem_stoch.evaluate_metrics(P_init)
     
@@ -149,10 +155,12 @@ def test_deterministic_vs_stochastic():
     print(f"  Variance: {metrics_stoch_init['Net_Var']:.6f}")
     print(f"  π error: {metrics_stoch_init['pi_error']:.6f}")
     
+    # Reset seed for reproducible SPSA (different seed than deterministic)
+    np.random.seed(seed + 2)
     print("\nRunning SPSA optimization (Stochastic)...")
     iter_stoch, eff_stoch, kw_stoch, var_stoch, pi_err_stoch, best_x_stoch, _ = solve_spsa_efficiency(
-        problem_stoch, x_init, max_iter=10000, a=0.02, a_eps=50,
-        obj_interval=200, verbose=True
+        problem_stoch, x_init_stoch, verbose=True,
+        max_iter=10000
     )
     
     P_stoch = x_to_matrix(best_x_stoch, problem_stoch.N, problem_stoch.edge_matrix, False)
@@ -294,15 +302,12 @@ def test_cv_levels():
         
         problem = EfficiencyProblemInstanceStochastic(
             mA=mA, W=W, W2=W2, eta=1e-4, pi_hat=pi_hat,
-            objective_type='maximize_efficiency', pi_penalty_weight=1e2
+            objective_type='maximize_efficiency', 
+            use_hard_constraint=True
         )
         
-        # Uniform initial policy
-        x_init = np.zeros(problem.d)
-        for i, subset in enumerate(problem.neighborhoods):
-            if len(subset) > 0:
-                for idx in subset:
-                    x_init[idx] = 1.0 / len(subset)
+        # Get feasible initial point
+        x_init = problem.get_feasible_initial_point()
         
         P = x_to_matrix(x_init, problem.N, problem.edge_matrix, False)
         metrics = problem.evaluate_metrics(P)
@@ -353,8 +358,8 @@ Application: Security patrol where regular, predictable coverage is desired.
 """)
     
     # Grid parameters
-    n = 5
-    obstacles = [(2, 2)]
+    n = 10
+    obstacles = [(2, 2), (5, 5), (7, 3)]
     
     print(f"Grid size: {n}×{n} = {n*n} nodes")
     print(f"Obstacle positions: {obstacles}")
@@ -377,20 +382,16 @@ Application: Security patrol where regular, predictable coverage is desired.
     print("BASELINE: Uniform Random Walk")
     print("-"*60)
     
-    # Create problem for evaluation
+    # Create problem for evaluation with HARD CONSTRAINT
     problem = EfficiencyProblemInstanceStochastic(
         mA=mA, W=W, W2=W2,
         eta=1e-4, pi_hat=pi_hat,
         objective_type='minimize_variance',
-        pi_penalty_weight=1e3  # Strong penalty to maintain coverage
+        use_hard_constraint=True  # Ensures uniform coverage
     )
     
-    # Initial uniform policy
-    x_init = np.zeros(problem.d)
-    for i, subset in enumerate(problem.neighborhoods):
-        if len(subset) > 0:
-            for idx in subset:
-                x_init[idx] = 1.0 / len(subset)
+    # Get feasible initial point
+    x_init = problem.get_feasible_initial_point()
     
     P_init = x_to_matrix(x_init, problem.N, problem.edge_matrix, False)
     metrics_init = problem.evaluate_metrics(P_init)
@@ -409,11 +410,8 @@ Application: Security patrol where regular, predictable coverage is desired.
     print("\nRunning SPSA optimization to minimize variance...")
     iter_hist, eff_hist, kw_hist, var_hist, pi_err_hist, best_x, _ = solve_spsa_efficiency(
         problem, x_init, 
-        max_iter=3000, 
-        a=0.02, 
-        a_eps=50,
-        obj_interval=200, 
-        verbose=True
+        verbose=True,
+        max_iter=10000
     )
     
     P_opt = x_to_matrix(best_x, problem.N, problem.edge_matrix, False)

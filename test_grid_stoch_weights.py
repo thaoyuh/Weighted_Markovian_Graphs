@@ -391,7 +391,7 @@ class MarkovChainStochastic:
         return self.Net_Var
     
     def compute_efficiency_index(self):
-        """Compute efficiency index = Variance / Mean."""
+        """Compute surprise index = Variance / Mean."""
         if self.K_W is None:
             self.compute_kemeny_W()
         if self.Net_Var is None:
@@ -429,7 +429,7 @@ class MarkovChainStochastic:
 
 class EfficiencyProblemInstanceStochastic:
     """
-    Problem instance for efficiency index optimization with STOCHASTIC weights.
+    Problem instance for surprise index optimization with STOCHASTIC weights.
     """
     
     def __init__(self, mA, W, W2, eta=1e-4, pi_hat=None, 
@@ -529,7 +529,7 @@ def solve_spsa_efficiency(problem, x_init, max_iter=50000,
                           a=0.05, a_eps=100, e=1e-3, r_nu=0.101,
                           obj_interval=100, verbose=True,
                           max_obj_value=1e10):
-    """SPSA optimization for efficiency index with numerical safeguards."""
+    """SPSA optimization for surprise index with numerical safeguards."""
     
     x = problem.project(x_init.copy())
     best_x = x.copy()
@@ -657,15 +657,15 @@ def plot_optimization_results_single(iter_hist, eff_hist, kw_hist, var_hist,
     """
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
     
-    # Plot 1: Efficiency Index
+    # Plot 1: Surprise Index
     axes[0, 0].plot(iter_hist, eff_hist, 'b-', linewidth=2, marker='o', markersize=4)
     axes[0, 0].axhline(y=initial_metrics['Eff_Idx'], color='g', linestyle='--', 
                        label=f"Initial = {initial_metrics['Eff_Idx']:.4f}")
     axes[0, 0].axhline(y=final_metrics['Eff_Idx'], color='r', linestyle='--',
                        label=f"Final = {final_metrics['Eff_Idx']:.4f}")
     axes[0, 0].set_xlabel('Iteration')
-    axes[0, 0].set_ylabel(r'Efficiency Index $\lambda$')
-    axes[0, 0].set_title(r'Efficiency Index ($\uparrow$ higher is better)')
+    axes[0, 0].set_ylabel(r'Surprise Index $\lambda$')
+    axes[0, 0].set_title(r'Surprise Index ($\uparrow$ higher is better)')
     axes[0, 0].legend()
     axes[0, 0].grid(True, alpha=0.3)
     
@@ -1013,8 +1013,8 @@ def test_deterministic_vs_stochastic():
     print("="*80)
     
     # Grid parameters
-    n = 5
-    obstacles = [(2, 2)]  # Center obstacle
+    n = 6  # Grid size n x n
+    obstacles = [(1, 1), (3,4)]   # Center obstacle
     
     print(f"\nGrid size: {n}×{n} = {n*n} nodes")
     print(f"Obstacle positions: {obstacles}")
@@ -1053,7 +1053,7 @@ def test_deterministic_vs_stochastic():
     metrics_det_init = problem_det.evaluate_metrics(P_init)
     
     print(f"\nInitial metrics (Deterministic W2 = W²):")
-    print(f"  Efficiency Index: {metrics_det_init['Eff_Idx']:.6f}")
+    print(f"  Surprise Index: {metrics_det_init['Eff_Idx']:.6f}")
     print(f"  K_W (Mean): {metrics_det_init['K_W']:.6f}")
     print(f"  Variance: {metrics_det_init['Net_Var']:.6f}")
     
@@ -1072,7 +1072,7 @@ def test_deterministic_vs_stochastic():
     metrics_det_final = problem_det.evaluate_metrics(P_det)
     
     print(f"\nFinal metrics (Deterministic):")
-    print(f"  Efficiency Index: {metrics_det_final['Eff_Idx']:.6f}")
+    print(f"  Surprise Index: {metrics_det_final['Eff_Idx']:.6f}")
     print(f"  K_W (Mean): {metrics_det_final['K_W']:.6f}")
     print(f"  Variance: {metrics_det_final['Net_Var']:.6f}")
     
@@ -1107,7 +1107,7 @@ def test_deterministic_vs_stochastic():
     metrics_stoch_init = problem_stoch.evaluate_metrics(P_init)
     
     print(f"\nInitial metrics (Stochastic E[W²] ≠ E[W]²):")
-    print(f"  Efficiency Index: {metrics_stoch_init['Eff_Idx']:.6f}")
+    print(f"  Surprise Index: {metrics_stoch_init['Eff_Idx']:.6f}")
     print(f"  K_W (Mean): {metrics_stoch_init['K_W']:.6f}")
     print(f"  Variance: {metrics_stoch_init['Net_Var']:.6f}")
     
@@ -1122,7 +1122,7 @@ def test_deterministic_vs_stochastic():
     metrics_stoch_final = problem_stoch.evaluate_metrics(P_stoch)
     
     print(f"\nFinal metrics (Stochastic):")
-    print(f"  Efficiency Index: {metrics_stoch_final['Eff_Idx']:.6f}")
+    print(f"  Surprise Index: {metrics_stoch_final['Eff_Idx']:.6f}")
     print(f"  K_W (Mean): {metrics_stoch_final['K_W']:.6f}")
     print(f"  Variance: {metrics_stoch_final['Net_Var']:.6f}")
     
@@ -1137,7 +1137,7 @@ def test_deterministic_vs_stochastic():
     diff_eff_init = metrics_stoch_init['Eff_Idx'] - metrics_det_init['Eff_Idx']
     diff_var_init = metrics_stoch_init['Net_Var'] - metrics_det_init['Net_Var']
     
-    print(f"{'INITIAL Efficiency Index':<30} {metrics_det_init['Eff_Idx']:<20.4f} {metrics_stoch_init['Eff_Idx']:<20.4f} {diff_eff_init:+.4f}")
+    print(f"{'INITIAL Surprise Index':<30} {metrics_det_init['Eff_Idx']:<20.4f} {metrics_stoch_init['Eff_Idx']:<20.4f} {diff_eff_init:+.4f}")
     print(f"{'INITIAL K_W (Mean)':<30} {metrics_det_init['K_W']:<20.4f} {metrics_stoch_init['K_W']:<20.4f} {0:+.4f}")
     print(f"{'INITIAL Variance':<30} {metrics_det_init['Net_Var']:<20.4f} {metrics_stoch_init['Net_Var']:<20.4f} {diff_var_init:+.4f}")
     
@@ -1146,7 +1146,7 @@ def test_deterministic_vs_stochastic():
         diff_kw_final = metrics_stoch_final['K_W'] - metrics_det_final['K_W']
         diff_var_final = metrics_stoch_final['Net_Var'] - metrics_det_final['Net_Var']
         
-        print(f"\n{'FINAL Efficiency Index':<30} {metrics_det_final['Eff_Idx']:<20.4f} {metrics_stoch_final['Eff_Idx']:<20.4f} {diff_eff_final:+.4f}")
+        print(f"\n{'FINAL Surprise Index':<30} {metrics_det_final['Eff_Idx']:<20.4f} {metrics_stoch_final['Eff_Idx']:<20.4f} {diff_eff_final:+.4f}")
         print(f"{'FINAL K_W (Mean)':<30} {metrics_det_final['K_W']:<20.4f} {metrics_stoch_final['K_W']:<20.4f} {diff_kw_final:+.4f}")
         print(f"{'FINAL Variance':<30} {metrics_det_final['Net_Var']:<20.4f} {metrics_stoch_final['Net_Var']:<20.4f} {diff_var_final:+.4f}")
     
@@ -1162,7 +1162,7 @@ because the edge weight variance contributes to the path variance:
 Initial variance increase due to stochastic W: {diff_var_init:.4f}
 This is {100*diff_var_init/metrics_det_init['Net_Var']:.2f}% additional variance.
 
-The Efficiency Index (Var/Mean) also increases because:
+The Surprise Index (Var/Mean) also increases because:
   - Mean (K_W) stays the same (depends only on E[W])
   - Variance increases (depends on E[W²])
 """)
@@ -1215,8 +1215,8 @@ The Efficiency Index (Var/Mean) also increases because:
         axes[0].plot(iter_det, eff_hist_det, 'b-', label='Deterministic', linewidth=2, marker='o')
         axes[0].plot(iter_stoch, eff_hist_stoch, 'r-', label='Stochastic', linewidth=2, marker='s')
         axes[0].set_xlabel('Iteration')
-        axes[0].set_ylabel('Efficiency Index')
-        axes[0].set_title('Efficiency Index Convergence')
+        axes[0].set_ylabel('Surprise Index')
+        axes[0].set_title('Surprise Index Convergence')
         axes[0].legend()
         axes[0].grid(True, alpha=0.3)
         
@@ -1394,8 +1394,8 @@ def test_varying_cv_levels():
     width = 0.35
     
     ax2 = axes[1]
-    bars1 = ax2.bar(x_pos - width/2, efficiencies, width, label='Efficiency Index', color='blue', alpha=0.7)
-    ax2.set_ylabel('Efficiency Index', color='blue')
+    bars1 = ax2.bar(x_pos - width/2, efficiencies, width, label='Surprise Index', color='blue', alpha=0.7)
+    ax2.set_ylabel('Surprise Index', color='blue')
     ax2.tick_params(axis='y', labelcolor='blue')
     
     ax2_twin = ax2.twinx()

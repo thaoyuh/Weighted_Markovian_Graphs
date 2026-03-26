@@ -157,7 +157,7 @@ def plot_optimization_comparison(iter_det, eff_det, kw_det, var_det,
         ax.axhline(y=init_stoch['pi_error'], color='red', linestyle=':', alpha=0.5,
                    label=f"Stoch Initial = {init_stoch['pi_error']:.4f}")
         ax.set_xlabel('Iteration')
-        ax.set_ylabel(r'$\|\pi_W - \hat{\pi}\|_2$')
+        ax.set_ylabel(r'$\|\pi - \hat{\pi}\|_2$')
         ax.set_title(r'Stationary Distribution Error ($\downarrow$ lower is better)')
         ax.legend(fontsize=8)
         ax.grid(True, alpha=0.3)
