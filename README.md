@@ -113,7 +113,7 @@ A. Zocca and R. van der Burg are partially supported by the NWO Vidi project *Po
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+This project is licensed under the [MIT License](LICENSE.md).
 
 ---
 
