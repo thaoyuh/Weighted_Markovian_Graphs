@@ -6,8 +6,8 @@ Companion code for:
 
 This repository contains the numerical experiments for both applications in the paper:
 
-- **Surveillance Network** (Section 6.1) — Maximizing patrol unpredictability via the surprise index
-- **Traffic Network** (Section 6.2) — Preserving network resilience under sequential edge failures
+- **Surveillance Network** (Section 5.1) — Maximizing patrol unpredictability via the surprise index
+- **Traffic Network** (Section 5.2) — Preserving network resilience under sequential edge failures
 
 ---
 
@@ -20,7 +20,7 @@ The paper introduces a framework for weighted random walks on graphs that explic
 ## Repository Structure
 ```
 ├── README.md
-├── Surveillance_Network/           # Section 6.1: Surprise index optimization
+├── Surveillance_Network/           # Section 5.1: Surprise index optimization
 │   ├── Main_new.py                 # Main experiment script
 │   ├── problem_instance.py         # Constraints, projections, objective
 │   ├── network_stochastic.py       # Markov chain computations (M, V, K_W, S)
@@ -30,7 +30,7 @@ The paper introduces a framework for weighted random walks on graphs that explic
 │   ├── feasibility.py              # LP-based feasibility checking
 │   └── Results/                    # Output figures and reports
 │
-└── Traffic_Network/                # Section 6.2: Resilience under edge failures
+└── Traffic_Network/                # Section 5.2: Resilience under edge failures
     ├── main.ipynb                  # Main experiment notebook
     ├── functions.py                # Core computations (MFPT, variance, Kemeny)
     ├── projections.py              # Dykstra projection (hard pi constraint)
@@ -42,7 +42,7 @@ The paper introduces a framework for weighted random walks on graphs that explic
 
 ---
 
-## Application 1: Surveillance Network (Section 6.1)
+## Application 1: Surveillance Network (Section 5.1)
 
 Optimizes a *surprise index* $\mathcal{S}(\mathbf{P}) = \sqrt{V_{\mathcal{W}}} / K_{\mathcal{W}}$, a scale-invariant measure of patrol unpredictability. The optimization finds a transition matrix $\mathbf{P}$ that maximizes $\mathcal{S}$ subject to a hard stationary distribution constraint, using SPSA with null-space perturbations from Franssen et al. (2025).
 
@@ -75,7 +75,7 @@ python Main_new.py
 
 ---
 
-## Application 2: Traffic Network (Section 6.2)
+## Application 2: Traffic Network (Section 5.2)
 
 Performs a sequential $N{-}k$ failure analysis to quantify network resilience. When edges fail (road closures), the framework re-projects the transition matrix and optimizes edge weights (speed limits) to preserve connectivity. Three projection strategies are implemented:
 
