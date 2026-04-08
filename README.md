@@ -76,14 +76,16 @@ python Main_new.py
 ---
 
 ## Application 2: Traffic Network (Section 5.2)
+When links in a road network fail (e.g., due to accidents or extreme weather), the natural routing behavior of drivers shifts. The central problem for a traffic authority is to determine how to systematically adjust the **traversal times $W$** (via physical speed limits) on the remaining operational links to mitigate the disruption's impact and restore global efficiency.
 
-Performs a sequential $N{-}k$ failure analysis to quantify network resilience. When edges fail (road closures), the framework re-projects the transition matrix and optimizes edge weights (speed limits) to preserve connectivity. Three projection strategies are implemented:
+We perform a sequential $N{-}k$ failure analysis to quantify network resilience. When edges fail (road closures), the framework re-projects the transition matrix and optimizes edge weights (speed limits) to preserve connectivity. Using the **Weighted Kemeny Constant** as our objective metric for global connectivity, we frame this as a minimal-intervention projection problem. We evaluate three distinct regulatory policies:
 
-- **Naive** (`naive_proj.py`) — row renormalization (short-term response)
-- **Stationary-preserving** (`projections.py`) — Dykstra projection to maintain $\pi^*$ (long-term response)
-- **Hybrid** (`hybrid_projection.py`) — locks destination nodes to $\pi^*$, scales intersections to natural flow
+* **Unconstrained Policy (Unsupervised):** Allows the traffic network to drift and reorganize naturally. While this achieves massive improvements in flow efficiency, it does so at the unacceptable cost of destroying original service levels at critical destinations.
+* **Strictly Constrained Policy (Supervised):** The traffic authority mandates strict adherence to the pre-failure equilibrium everywhere. This severely restricts the optimization space, yielding the lowest improvements and causing severe structural stress on the surviving topology.
+* **Hybrid Constrained Policy (Locally Supervised):** The Pareto-optimal compromise. We partition the network into strictly protected *destination nodes* and elastic *transit nodes*. 
 
-The weight optimization (`minimal_optimization.py`) solves a constrained minimal-intervention program: find the smallest change in weights such that $K_{\mathcal{W}}$ and $V_{\mathcal{W}}$ do not deteriorate.
+### 🏆 Key Findings
+The **Hybrid Constrained Policy** represents a principled balance: *preserve what matters, release what does not, and exploit the resulting flexibility*.
 
 **Configuration** (set in `main.ipynb`):
 
